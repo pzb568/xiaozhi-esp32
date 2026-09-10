@@ -468,6 +468,8 @@ elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C5_TOUCH_LCD_1_69)
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_20_4)
     set(BUILTIN_ICON_FONT font_material_symbols_20_4)
     set(DEFAULT_EMOJI_COLLECTION noto-color-emoji_64)
+elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16)
+    set(BOARD_DIR "waveshare/esp32-c6-dev-kit-n16")
 elseif(CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_EPAPER_1_54)
     set(BOARD_DIR "waveshare/esp32-c6-epaper-1.54")
     set(BUILTIN_TEXT_FONT font_noto_sans_basic_20_4)
@@ -1090,6 +1092,7 @@ idf_component_register(SRCS ${SOURCES}
                         esp_driver_i2c
                         esp_driver_i2s
                         esp_driver_ledc
+                        esp_driver_rmt
                         esp_driver_jpeg
                         esp_driver_ppa
                         esp_driver_tsens

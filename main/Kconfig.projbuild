@@ -434,6 +434,9 @@ choice BOARD_TYPE
     config BOARD_TYPE_WAVESHARE_ESP32_C5_TOUCH_LCD_1_69
         bool "Waveshare ESP32-C5-Touch-LCD-1.69"
         depends on IDF_TARGET_ESP32C5
+    config BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16
+        bool "Waveshare ESP32-C6-DEV-KIT-N16 (MAX98357+INMP441+IR DIY)"
+        depends on IDF_TARGET_ESP32C6
     config BOARD_TYPE_WAVESHARE_ESP32_C6_EPAPER_1_54
         bool "Waveshare ESP32-C6-e-Paper-1.54"
         depends on IDF_TARGET_ESP32C6
