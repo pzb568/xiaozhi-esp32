@@ -13,7 +13,6 @@ jobs:
   build:
     name: Build Waveshare ESP32-C6-DEV-KIT-N16
     runs-on: ubuntu-latest
-
     container:
       image: espressif/idf:v6.1
 
@@ -27,7 +26,8 @@ jobs:
           source $IDF_PATH/export.sh
           python scripts/build.py \
             waveshare/esp32-c6-dev-kit-n16 \
-            --name esp32-c6-dev-kit-n16
+            --name esp32-c6-dev-kit-n16 \
+            --wake-word nihaoxiaozhi
 
       - name: Upload firmware
         uses: actions/upload-artifact@v7
