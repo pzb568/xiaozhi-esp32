@@ -1,0 +1,37 @@
+name: Build Waveshare ESP32-C6-DEV-KIT-N16
+
+on:
+  push:
+    branches:
+      - c6-dev-kit-n16-upstream-sync
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Waveshare ESP32-C6-DEV-KIT-N16
+    runs-on: ubuntu-latest
+
+    container:
+      image: espressif/idf:v6.1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Build firmware
+        shell: bash
+        run: |
+          source $IDF_PATH/export.sh
+          python scripts/build.py \
+            waveshare/esp32-c6-dev-kit-n16 \
+            --name esp32-c6-dev-kit-n16
+
+      - name: Upload firmware
+        uses: actions/upload-artifact@v7
+        with:
+          name: xiaozhi_waveshare-esp32-c6-dev-kit-n16_${{ github.sha }}
+          path: build/merged-binary.bin
+          if-no-files-found: error
