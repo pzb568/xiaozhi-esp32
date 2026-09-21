@@ -29,9 +29,27 @@ jobs:
             --name esp32-c6-dev-kit-n16 \
             --wake-word nihaoxiaozhi
 
+      - name: Show partition table and sizes
+        shell: bash
+        run: |
+          source $IDF_PATH/export.sh
+          echo "===== PARTITION TABLE ====="
+          python $IDF_PATH/components/partition_table/gen_esp32part.py \
+              build/partition_table/partition-table.bin || true
+          echo "===== generated_assets.bin ====="
+          ls -lh build/generated_assets.bin || true
+          echo "===== srmodels.bin ====="
+          find build -iname "srmodels.bin" -exec ls -lh {} \; || true
+
       - name: Upload firmware
         uses: actions/upload-artifact@v7
         with:
           name: xiaozhi_waveshare-esp32-c6-dev-kit-n16_${{ github.sha }}
-          path: build/merged-binary.bin
+          path: |
+            build/merged-binary.bin
+            build/generated_assets.bin
+            build/partition_table/partition-table.bin
+            build/xiaozhi.bin
+            build/bootloader/bootloader.bin
+            build/ota_data_initial.bin
           if-no-files-found: error
