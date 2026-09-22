@@ -53,7 +53,7 @@ IrTransmitter::IrTransmitter(gpio_num_t tx_pin) : tx_pin_(tx_pin) {
     tx_cfg.gpio_num = tx_pin_;
     tx_cfg.clk_src = RMT_CLK_SRC_XTAL;   // C6 只支持 XTAL
     tx_cfg.resolution_hz = 1000000;   // 1 tick = 1 us
-    tx_cfg.mem_block_symbols = 64;
+    tx_cfg.mem_block_symbols = 48;
     esp_err_t err = rmt_new_tx_channel(&tx_cfg, &tx_channel_);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "rmt_new_tx_channel FAILED: 0x%x (%s)", err, esp_err_to_name(err));

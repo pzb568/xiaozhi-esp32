@@ -74,6 +74,7 @@ jobs:
             build/generated_assets.bin
             build/partition_table/partition-table.bin
             build/xiaozhi.bin
+            build/xiaozhi.elf
             build/bootloader/bootloader.bin
             build/ota_data_initial.bin
           if-no-files-found: error
