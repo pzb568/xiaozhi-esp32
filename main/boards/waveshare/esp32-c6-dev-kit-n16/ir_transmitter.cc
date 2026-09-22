@@ -51,7 +51,7 @@ IrTransmitter::IrTransmitter(gpio_num_t tx_pin) : tx_pin_(tx_pin) {
     ESP_LOGI(TAG, "=== IR RMT init START on GPIO%d ===", tx_pin_);
     rmt_tx_channel_config_t tx_cfg = {};
     tx_cfg.gpio_num = tx_pin_;
-    tx_cfg.clk_src = RMT_CLK_SRC_PLL_F80M;
+    tx_cfg.clk_src = RMT_CLK_SRC_XTAL;   // C6 只支持 XTAL
     tx_cfg.resolution_hz = 1000000;   // 1 tick = 1 us
     tx_cfg.mem_block_symbols = 64;
     esp_err_t err = rmt_new_tx_channel(&tx_cfg, &tx_channel_);
