@@ -54,6 +54,11 @@ IrTransmitter::IrTransmitter(gpio_num_t tx_pin) : tx_pin_(tx_pin) {
     tx_cfg.clk_src = RMT_CLK_SRC_DEFAULT;
     tx_cfg.resolution_hz = 1000000;   // 1 tick = 1 us
     tx_cfg.mem_block_symbols = 48;
+    tx_cfg.intr_priority = 1;
+    tx_cfg.flags.invert_out = 0;
+    tx_cfg.flags.with_dma = 0;
+    tx_cfg.flags.io_loop_back = 0;
+    tx_cfg.flags.io_od_mode = 0;
     esp_err_t err = rmt_new_tx_channel(&tx_cfg, &tx_channel_);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "rmt_new_tx_channel FAILED: 0x%x (%s)", err, esp_err_to_name(err));
