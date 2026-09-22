@@ -67,7 +67,7 @@
 // ---------------- 空调红外发射管（分立元件，RMT 直驱）----------------
 // GPIO10 -> 100Ω 电阻 -> 红外发射管(940nm) -> GND
 // 空调为专有协议（非 NEC），必须用独立发射管发送，模块发不了空调码
-#define IR_AC_TX_PIN            GPIO_NUM_10
+#define IR_AC_TX_PIN            GPIO_NUM_2
 // 默认空调品牌：gree / midea / haier（语音控制未指定品牌时使用）
 #define IR_AC_DEFAULT_BRAND     "gree"
 
