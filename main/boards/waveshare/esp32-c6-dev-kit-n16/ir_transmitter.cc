@@ -54,6 +54,10 @@ IrTransmitter::IrTransmitter(gpio_num_t tx_pin) : tx_pin_(tx_pin) {
     tx_cfg.clk_src = RMT_CLK_SRC_DEFAULT;
     tx_cfg.resolution_hz = 1000000;   // 1 tick = 1 us
     tx_cfg.mem_block_symbols = 48;
+    tx_cfg.trans_queue_depth = 4;
+    tx_cfg.intr_priority = 1;
+    tx_cfg.trans_queue_depth = 4;
+    tx_cfg.intr_priority = 1;
     tx_cfg.intr_priority = 1;
     tx_cfg.flags.invert_out = 0;
     tx_cfg.flags.with_dma = 0;
