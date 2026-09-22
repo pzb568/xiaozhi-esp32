@@ -239,6 +239,9 @@ void Assets::LvglStrategy::UnApplyPartition(Assets* assets) {
 
 bool Assets::LvglStrategy::GetAssetData(Assets* assets, const std::string& name, void*& ptr,
                                         size_t& size) {
+    if (!checksum_valid_ || mmap_root_ == nullptr) {
+        return false;
+    }
     auto asset = assets_.find(name);
     if (asset == assets_.end()) {
         return false;
