@@ -80,15 +80,6 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     std::lock_guard<std::mutex> lock(input_buffer_mutex_);
     // Check running state inside lock to avoid TOCTOU race with Stop()
     if (!running_) {
-        static int not_running_cnt = 0;
-        static TickType_t last_log = 0;
-        not_running_cnt++;
-        TickType_t now = xTaskGetTickCount();
-        if ((now - last_log) > pdMS_TO_TICKS(5000)) {
-            ESP_LOGW("WakeDbg", "NOT RUNNING! Feed called %d times in last 5s", not_running_cnt);
-            not_running_cnt = 0;
-            last_log = now;
-        }
         return;
     }
 
