@@ -252,6 +252,15 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
         int32_t value = bit32_buffer[i] >> 12;
         dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
     }
+    // === MIC DEBUG: 打印麦克风原始数据，判断是否工作 ===
+    static int mic_dbg_cnt = 0;
+    if (++mic_dbg_cnt % 100 == 0) {
+        ESP_LOGI("MicDebug", "bytes=%d raw[0..4]=%ld %ld %ld %ld %ld -> dest16[0..4]=%d %d %d %d %d",
+                 (int)bytes_read,
+                 (long)bit32_buffer[0], (long)bit32_buffer[1], (long)bit32_buffer[2],
+                 (long)bit32_buffer[3], (long)bit32_buffer[4],
+                 (int)dest[0], (int)dest[1], (int)dest[2], (int)dest[3], (int)dest[4]);
+    }
     return samples;
 }
 
