@@ -80,6 +80,15 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     std::lock_guard<std::mutex> lock(input_buffer_mutex_);
     // Check running state inside lock to avoid TOCTOU race with Stop()
     if (!running_) {
+        static int not_running_cnt = 0;
+        static TickType_t last_log = 0;
+        not_running_cnt++;
+        TickType_t now = xTaskGetTickCount();
+        if ((now - last_log) > pdMS_TO_TICKS(5000)) {
+            ESP_LOGW("WakeDbg", "NOT RUNNING! Feed called %d times in last 5s", not_running_cnt);
+            not_running_cnt = 0;
+            last_log = now;
+        }
         return;
     }
 
@@ -92,8 +101,17 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     }
 
     int chunksize = wakenet_iface_->get_samp_chunksize(wakenet_data_);
+    static int detect_cnt = 0;
+    static int buf_peak = 0;
     while (input_buffer_.size() >= chunksize) {
         int res = wakenet_iface_->detect(wakenet_data_, input_buffer_.data());
+        detect_cnt++;
+        if ((int)input_buffer_.size() > buf_peak) buf_peak = (int)input_buffer_.size();
+        if (detect_cnt % 500 == 0) {
+            ESP_LOGI("WakeDbg", "detect#%d chunk=%d buf=%d peak=%d res=%d",
+                     detect_cnt, chunksize, (int)input_buffer_.size(), buf_peak, res);
+            buf_peak = 0;
+        }
         if (res > 0) {
             last_detected_wake_word_ = wakenet_iface_->get_word_name(wakenet_data_, res);
             running_ = false;
