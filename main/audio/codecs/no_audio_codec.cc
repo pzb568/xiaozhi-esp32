@@ -258,12 +258,6 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
         dc_prev_out = filtered;
         dest[i] = (filtered > INT16_MAX) ? INT16_MAX : (filtered < -INT16_MAX) ? -INT16_MAX : (int16_t)filtered;
     }
-    static int mic_dbg_cnt = 0;
-    if (++mic_dbg_cnt % 100 == 0) {
-        ESP_LOGI("MicDebug", "d0-9= %d %d %d %d %d %d %d %d %d %d",
-                 (int)dest[0], (int)dest[1], (int)dest[2], (int)dest[3], (int)dest[4],
-                 (int)dest[5], (int)dest[6], (int)dest[7], (int)dest[8], (int)dest[9]);
-    }
     return samples;
 }
 

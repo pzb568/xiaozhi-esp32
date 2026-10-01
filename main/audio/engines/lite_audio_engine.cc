@@ -33,11 +33,6 @@ bool LiteAudioEngine::Initialize(AudioCodec* codec, int frame_duration_ms, srmod
 }
 
 void LiteAudioEngine::Feed(std::vector<int16_t>&& data) {
-    static int cnt = 0;
-    if (++cnt % 100 == 0) {
-        ESP_LOGI("FeedDebug", "wake_en=%d voice_proc=%d len=%d",
-                 (int)wake_word_enabled_, (int)voice_processing_enabled_, (int)data.size());
-    }
     {
         std::lock_guard<std::mutex> lock(wake_word_mutex_);
         if (wake_word_enabled_ && wake_word_) {

@@ -71,18 +71,12 @@ void AudioService::Initialize(AudioCodec* codec) {
     }
 
     if (codec->input_sample_rate() != 16000) {
-        ESP_LOGI(TAG, "[RESAMPLER] codec input_sample_rate=%d, creating resampler 24000 -> 16000",
-                 codec->input_sample_rate());
         esp_ae_rate_cvt_cfg_t input_resampler_cfg = RATE_CVT_CFG(
             codec->input_sample_rate(), ESP_AUDIO_SAMPLE_RATE_16K, codec->input_channels());
         auto resampler_ret = esp_ae_rate_cvt_open(&input_resampler_cfg, &input_resampler_);
         if (input_resampler_ == nullptr) {
-            ESP_LOGE(TAG, "[RESAMPLER] FAILED! error code: %d", resampler_ret);
-        } else {
-            ESP_LOGI(TAG, "[RESAMPLER] created OK, handle=%p", input_resampler_);
+            ESP_LOGE(TAG, "Failed to create input resampler, error code: %d", resampler_ret);
         }
-    } else {
-        ESP_LOGW(TAG, "[RESAMPLER] NOT created! input_sample_rate == 16000, no resampling");
     }
 
 #if CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31
@@ -206,14 +200,11 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
     }
 
     if (codec_->input_sample_rate() != sample_rate) {
-        ESP_LOGI(TAG, "[READ-RESAMP] codec_rate=%d target_rate=%d samples=%d",
-                 codec_->input_sample_rate(), sample_rate, samples);
         data.resize(samples * codec_->input_sample_rate() / sample_rate * codec_->input_channels());
         if (!codec_->InputData(data)) {
             return false;
         }
         if (input_resampler_ != nullptr) {
-            ESP_LOGI(TAG, "[READ-RESAMP] resampler EXISTS, in_size=%d", (int)data.size());
             std::lock_guard<std::mutex> lock(input_resampler_mutex_);
             uint32_t in_sample_num = data.size() / codec_->input_channels();
             uint32_t output_samples = 0;
@@ -670,30 +661,21 @@ std::unique_ptr<AudioStreamPacket> AudioService::PopWakeWordPacket() {
 void AudioService::EnableWakeWordDetection(bool enable) {
     ESP_LOGI(TAG, "[WAKE] %s wake word detection", enable ? "Enabling" : "Disabling");
     if (enable) {
-        ESP_LOGI(TAG, "[WAKE-DBG] step1: calling InitializeAudioEngine");
         if (!InitializeAudioEngine()) {
-            ESP_LOGE(TAG, "[WAKE-DBG] FAIL: InitializeAudioEngine returned false");
             xEventGroupClearBits(event_group_, AS_EVENT_WAKE_WORD_RUNNING);
             return;
         }
-        ESP_LOGI(TAG, "[WAKE-DBG] step2: InitializeAudioEngine OK");
 #if !(CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31)
         auto* lite_engine = static_cast<LiteAudioEngine*>(audio_engine_.get());
-        ESP_LOGI(TAG, "[WAKE-DBG] step3: calling RestoreWakeWordResources");
         if (!lite_engine->RestoreWakeWordResources()) {
-            ESP_LOGE(TAG, "[WAKE-DBG] FAIL: RestoreWakeWordResources returned false");
             xEventGroupClearBits(event_group_, AS_EVENT_WAKE_WORD_RUNNING);
             return;
         }
-        ESP_LOGI(TAG, "[WAKE-DBG] step4: RestoreWakeWordResources OK");
 #endif
-        ESP_LOGI(TAG, "[WAKE-DBG] step5: calling HasWakeWord");
         if (!audio_engine_->HasWakeWord()) {
-            ESP_LOGE(TAG, "[WAKE-DBG] FAIL: HasWakeWord returned false");
             xEventGroupClearBits(event_group_, AS_EVENT_WAKE_WORD_RUNNING);
             return;
         }
-        ESP_LOGI(TAG, "[WAKE-DBG] step6: HasWakeWord OK, will enable wake word");
         {
             std::lock_guard<std::mutex> lock(input_resampler_mutex_);
             if (input_resampler_ != nullptr) {
