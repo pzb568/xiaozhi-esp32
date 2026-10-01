@@ -1049,14 +1049,14 @@ void Application::HandleStateChangedEvent() {
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_service_.EnableVoiceProcessing(false);
                 // Only AFE wake word can be detected in speaking mode
-                audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+                audio_service_.EnableWakeWordDetection(true);
             }
             audio_service_.ResetDecoder();
             break;
         case kDeviceStateNotifying:
             display->SetStatus(Lang::Strings::SPEAKING);
             audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+            audio_service_.EnableWakeWordDetection(true);
             break;
         case kDeviceStateWifiConfiguring:
             audio_service_.EnableVoiceProcessing(false);
@@ -1091,7 +1091,7 @@ void Application::StartListeningAudio() {
 void Application::ConfigureWakeWordForListening() {
 #ifdef CONFIG_WAKE_WORD_DETECTION_IN_LISTENING
     // Enable wake word detection in listening mode (configured via Kconfig)
-    audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+    audio_service_.EnableWakeWordDetection(true);
 #else
     // Disable wake word detection in listening mode
     audio_service_.EnableWakeWordDetection(false);
@@ -1107,7 +1107,7 @@ void Application::StartNotification(std::string audio_url, std::vector<NotifySub
     auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::PERFORMANCE);
     audio_service_.EnableVoiceProcessing(false);
-    audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+    audio_service_.EnableWakeWordDetection(true);
     audio_service_.ReleaseWakeWordResources();
     while (audio_service_.PopPacketFromSendQueue()) {
         // Discard microphone audio left over from a previous conversation.
