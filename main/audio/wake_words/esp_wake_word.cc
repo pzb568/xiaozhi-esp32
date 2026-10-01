@@ -111,6 +111,11 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
             ESP_LOGI("WakeDbg", "detect#%d chunk=%d buf=%d peak=%d res=%d",
                      detect_cnt, chunksize, (int)input_buffer_.size(), buf_peak, res);
             buf_peak = 0;
+            ESP_LOGI("WakeDbg", "samples: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
+                     input_buffer_[0], input_buffer_[1], input_buffer_[2], input_buffer_[3],
+                     input_buffer_[4], input_buffer_[5], input_buffer_[6], input_buffer_[7],
+                     input_buffer_[8], input_buffer_[9], input_buffer_[10], input_buffer_[11],
+                     input_buffer_[12], input_buffer_[13], input_buffer_[14], input_buffer_[15]);
         }
         if (res > 0) {
             last_detected_wake_word_ = wakenet_iface_->get_word_name(wakenet_data_, res);
