@@ -252,7 +252,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     static int32_t dc_prev_in = 0;
     static int32_t dc_prev_out = 0;
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 10;   // ×4 增益
+        int32_t value = bit32_buffer[i] >> 9;   // ×8 增益
         int32_t filtered = value - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
         dc_prev_in = value;
         dc_prev_out = filtered;
