@@ -94,6 +94,19 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     int chunksize = wakenet_iface_->get_samp_chunksize(wakenet_data_);
     static int detect_cnt = 0;
     static int buf_peak = 0;
+    {
+        static int peak_log_cnt = 0;
+        int16_t max_abs = 0;
+        for (size_t i = 0; i < input_buffer_.size() && i < 512; i++) {
+            int16_t v = input_buffer_[i];
+            int16_t a = (v < 0) ? -v : v;
+            if (a > max_abs) max_abs = a;
+        }
+        if (max_abs > 3000 && (++peak_log_cnt % 20 == 0)) {
+            ESP_LOGI("PeakDbg", "LOUD! max_abs=%d buf_size=%d", (int)max_abs, (int)input_buffer_.size());
+        }
+    }
+
     while (input_buffer_.size() >= chunksize) {
         int res = wakenet_iface_->detect(wakenet_data_, input_buffer_.data());
         detect_cnt++;
