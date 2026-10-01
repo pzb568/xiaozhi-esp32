@@ -248,15 +248,9 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     }
 
     samples = bytes_read / sizeof(int32_t);
-    // DC 高通滤波（去除麦克风 DC 偏置，一阶 IIR）
-    static int32_t dc_prev_in = 0;
-    static int32_t dc_prev_out = 0;
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 10;   // ×8 增益
-        int32_t filtered = value - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
-        dc_prev_in = value;
-        dc_prev_out = filtered;
-        dest[i] = (filtered > INT16_MAX) ? INT16_MAX : (filtered < -INT16_MAX) ? -INT16_MAX : (int16_t)filtered;
+        int32_t value = bit32_buffer[i] >> 12;
+        dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
     }
     return samples;
 }
