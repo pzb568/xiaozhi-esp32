@@ -252,7 +252,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     static int32_t dc_prev_in = 0;
     static int32_t dc_prev_out = 0;
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 9;   // ×8 增益
+        int32_t value = bit32_buffer[i] >> 10;   // ×8 增益
         int32_t filtered = value - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
         dc_prev_in = value;
         dc_prev_out = filtered;
@@ -260,8 +260,9 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     }
     static int mic_dbg_cnt = 0;
     if (++mic_dbg_cnt % 100 == 0) {
-        ESP_LOGI("MicDebug", "bytes=%d dest16[0..4]=%d %d %d %d %d",
-                 (int)bytes_read, (int)dest[0], (int)dest[1], (int)dest[2], (int)dest[3], (int)dest[4]);
+        ESP_LOGI("MicDebug", "d0-9= %d %d %d %d %d %d %d %d %d %d",
+                 (int)dest[0], (int)dest[1], (int)dest[2], (int)dest[3], (int)dest[4],
+                 (int)dest[5], (int)dest[6], (int)dest[7], (int)dest[8], (int)dest[9]);
     }
     return samples;
 }
