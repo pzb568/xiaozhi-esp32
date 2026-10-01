@@ -62,7 +62,7 @@ protected:
     int input_channels_ = 1;
     int output_channels_ = 1;
     int output_volume_ = 70;
-    float input_gain_ = 0.0;
+    float input_gain_ = 4.0;   // INMP441 麦克风增益（其他 codec 会覆盖）
 
     virtual int Read(int16_t* dest, int samples) = 0;
     virtual int Write(const int16_t* data, int samples) = 0;
