@@ -249,7 +249,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
 
     samples = bytes_read / sizeof(int32_t);
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 12;
+        int32_t value = bit32_buffer[i] >> 10;   // 从 12 改为 10，信号 ×4
         dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
     }
     static int mic_dbg_cnt = 0;
