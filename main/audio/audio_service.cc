@@ -661,21 +661,30 @@ std::unique_ptr<AudioStreamPacket> AudioService::PopWakeWordPacket() {
 void AudioService::EnableWakeWordDetection(bool enable) {
     ESP_LOGI(TAG, "[WAKE] %s wake word detection", enable ? "Enabling" : "Disabling");
     if (enable) {
+        ESP_LOGI(TAG, "[WAKE-DBG] step1: calling InitializeAudioEngine");
         if (!InitializeAudioEngine()) {
+            ESP_LOGE(TAG, "[WAKE-DBG] FAIL: InitializeAudioEngine returned false");
             xEventGroupClearBits(event_group_, AS_EVENT_WAKE_WORD_RUNNING);
             return;
         }
+        ESP_LOGI(TAG, "[WAKE-DBG] step2: InitializeAudioEngine OK");
 #if !(CONFIG_IDF_TARGET_ESP32S3 || CONFIG_IDF_TARGET_ESP32P4 || CONFIG_IDF_TARGET_ESP32S31)
         auto* lite_engine = static_cast<LiteAudioEngine*>(audio_engine_.get());
+        ESP_LOGI(TAG, "[WAKE-DBG] step3: calling RestoreWakeWordResources");
         if (!lite_engine->RestoreWakeWordResources()) {
+            ESP_LOGE(TAG, "[WAKE-DBG] FAIL: RestoreWakeWordResources returned false");
             xEventGroupClearBits(event_group_, AS_EVENT_WAKE_WORD_RUNNING);
             return;
         }
+        ESP_LOGI(TAG, "[WAKE-DBG] step4: RestoreWakeWordResources OK");
 #endif
+        ESP_LOGI(TAG, "[WAKE-DBG] step5: calling HasWakeWord");
         if (!audio_engine_->HasWakeWord()) {
+            ESP_LOGE(TAG, "[WAKE-DBG] FAIL: HasWakeWord returned false");
             xEventGroupClearBits(event_group_, AS_EVENT_WAKE_WORD_RUNNING);
             return;
         }
+        ESP_LOGI(TAG, "[WAKE-DBG] step6: HasWakeWord OK, will enable wake word");
         {
             std::lock_guard<std::mutex> lock(input_resampler_mutex_);
             if (input_resampler_ != nullptr) {
