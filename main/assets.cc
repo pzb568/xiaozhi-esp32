@@ -51,11 +51,14 @@ bool Assets::FindPartition(Assets* assets) {
 }
 
 bool Assets::Apply(bool refresh_display_theme) {
-    return strategy_ ? strategy_->Apply(this, refresh_display_theme) : false;
+    (void)refresh_display_theme;
+    ESP_LOGW("Assets", "Assets disabled: Apply() short-circuited");
+    return false;
 }
 
 bool Assets::InitializePartition() {
-    return strategy_ ? strategy_->InitializePartition(this) : false;
+    ESP_LOGW("Assets", "Assets disabled: InitializePartition() short-circuited");
+    return false;
 }
 
 void Assets::UnApplyPartition() {
