@@ -248,9 +248,27 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     }
 
     samples = bytes_read / sizeof(int32_t);
+    // INMP441 outputs 24-bit left-aligned in 32-bit frame.
+    // >>12 keeps original full-scale, but INMP441 is typically ~-26 dBFS.
+    // >>10 applies 4x (12 dB) gain to bring speech level into WakeNet range.
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 12;
+        int32_t value = bit32_buffer[i] >> 10;
         dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
+    }
+
+    // Lightweight mic diagnostics: once per ~5s, report sample count and peak.
+    // Kept outside the hot loop; Read() runs ~10ms apart, so 500 calls == 5s.
+    static int mic_log_cnt = 0;
+    if (++mic_log_cnt % 500 == 0) {
+        int16_t peak = 0;
+        int n = samples < 256 ? samples : 256;
+        for (int i = 0; i < n; i++) {
+            int16_t a = dest[i] < 0 ? -dest[i] : dest[i];
+            if (a > peak) {
+                peak = a;
+            }
+        }
+        ESP_LOGI("MicDbg", "read#%d samples=%d peak=%d", mic_log_cnt, (int)samples, (int)peak);
     }
     return samples;
 }

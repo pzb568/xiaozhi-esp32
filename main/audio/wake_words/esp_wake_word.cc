@@ -1,11 +1,9 @@
 #include "esp_wake_word.h"
 #include <esp_log.h>
 
-
 #define TAG "EspWakeWord"
 
-EspWakeWord::EspWakeWord() {
-}
+EspWakeWord::EspWakeWord() {}
 
 EspWakeWord::~EspWakeWord() {
     if (wakenet_data_ != nullptr) {
@@ -34,7 +32,7 @@ bool EspWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
         ESP_LOGE(TAG, "No model found");
         return false;
     }
-    char *model_name = esp_srmodel_filter(wakenet_model_, ESP_WN_PREFIX, nullptr);
+    char* model_name = esp_srmodel_filter(wakenet_model_, ESP_WN_PREFIX, nullptr);
     if (model_name == nullptr) {
         ESP_LOGE(TAG, "No WakeNet model found");
         return false;
@@ -61,9 +59,7 @@ void EspWakeWord::OnWakeWordDetected(std::function<void(const std::string& wake_
     wake_word_detected_callback_ = callback;
 }
 
-void EspWakeWord::Start() {
-    running_ = true;
-}
+void EspWakeWord::Start() { running_ = true; }
 
 void EspWakeWord::Stop() {
     running_ = false;
@@ -92,8 +88,14 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     }
 
     int chunksize = wakenet_iface_->get_samp_chunksize(wakenet_data_);
+    static int detect_cnt = 0;
+    static int feed_peak = 0;
+
     while (input_buffer_.size() >= chunksize) {
         int res = wakenet_iface_->detect(wakenet_data_, input_buffer_.data());
+        detect_cnt++;
+        if ((int)input_buffer_.size() > feed_peak)
+            feed_peak = (int)input_buffer_.size();
         if (res > 0) {
             last_detected_wake_word_ = wakenet_iface_->get_word_name(wakenet_data_, res);
             running_ = false;
@@ -106,6 +108,13 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
         }
         input_buffer_.erase(input_buffer_.begin(), input_buffer_.begin() + chunksize);
     }
+
+    // Lightweight wake diagnostics: once per ~5s, report detect count and
+    // buffer peak. Outside the hot loop, so it cannot starve detection.
+    if (detect_cnt % 500 == 0) {
+        ESP_LOGI("WakeDbg", "detect#%d chunk=%d buf_peak=%d", detect_cnt, chunksize, feed_peak);
+        feed_peak = 0;
+    }
 }
 
 size_t EspWakeWord::GetFeedSize() {
@@ -115,9 +124,6 @@ size_t EspWakeWord::GetFeedSize() {
     return wakenet_iface_->get_samp_chunksize(wakenet_data_);
 }
 
-void EspWakeWord::EncodeWakeWordData() {
-}
+void EspWakeWord::EncodeWakeWordData() {}
 
-bool EspWakeWord::GetWakeWordOpus(std::vector<uint8_t>& opus) {
-    return false;
-}
+bool EspWakeWord::GetWakeWordOpus(std::vector<uint8_t>& opus) { return false; }
