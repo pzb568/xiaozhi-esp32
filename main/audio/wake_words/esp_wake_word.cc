@@ -1,11 +1,9 @@
 #include "esp_wake_word.h"
 #include <esp_log.h>
 
-
 #define TAG "EspWakeWord"
 
-EspWakeWord::EspWakeWord() {
-}
+EspWakeWord::EspWakeWord() {}
 
 EspWakeWord::~EspWakeWord() {
     if (wakenet_data_ != nullptr) {
@@ -34,7 +32,7 @@ bool EspWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
         ESP_LOGE(TAG, "No model found");
         return false;
     }
-    char *model_name = esp_srmodel_filter(wakenet_model_, ESP_WN_PREFIX, nullptr);
+    char* model_name = esp_srmodel_filter(wakenet_model_, ESP_WN_PREFIX, nullptr);
     if (model_name == nullptr) {
         ESP_LOGE(TAG, "No WakeNet model found");
         return false;
@@ -61,9 +59,7 @@ void EspWakeWord::OnWakeWordDetected(std::function<void(const std::string& wake_
     wake_word_detected_callback_ = callback;
 }
 
-void EspWakeWord::Start() {
-    running_ = true;
-}
+void EspWakeWord::Start() { running_ = true; }
 
 void EspWakeWord::Stop() {
     running_ = false;
@@ -92,35 +88,9 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     }
 
     int chunksize = wakenet_iface_->get_samp_chunksize(wakenet_data_);
-    static int detect_cnt = 0;
-    static int buf_peak = 0;
-    {
-        static int peak_log_cnt = 0;
-        int16_t max_abs = 0;
-        for (size_t i = 0; i < input_buffer_.size() && i < 512; i++) {
-            int16_t v = input_buffer_[i];
-            int16_t a = (v < 0) ? -v : v;
-            if (a > max_abs) max_abs = a;
-        }
-        if (max_abs > 3000 && (++peak_log_cnt % 20 == 0)) {
-            ESP_LOGI("PeakDbg", "LOUD! max_abs=%d buf_size=%d", (int)max_abs, (int)input_buffer_.size());
-        }
-    }
 
     while (input_buffer_.size() >= chunksize) {
         int res = wakenet_iface_->detect(wakenet_data_, input_buffer_.data());
-        detect_cnt++;
-        if ((int)input_buffer_.size() > buf_peak) buf_peak = (int)input_buffer_.size();
-        if (detect_cnt % 500 == 0) {
-            ESP_LOGI("WakeDbg", "detect#%d chunk=%d buf=%d peak=%d res=%d",
-                     detect_cnt, chunksize, (int)input_buffer_.size(), buf_peak, res);
-            buf_peak = 0;
-            ESP_LOGI("WakeDbg", "samples: %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d %d",
-                     input_buffer_[0], input_buffer_[1], input_buffer_[2], input_buffer_[3],
-                     input_buffer_[4], input_buffer_[5], input_buffer_[6], input_buffer_[7],
-                     input_buffer_[8], input_buffer_[9], input_buffer_[10], input_buffer_[11],
-                     input_buffer_[12], input_buffer_[13], input_buffer_[14], input_buffer_[15]);
-        }
         if (res > 0) {
             last_detected_wake_word_ = wakenet_iface_->get_word_name(wakenet_data_, res);
             running_ = false;
@@ -142,9 +112,6 @@ size_t EspWakeWord::GetFeedSize() {
     return wakenet_iface_->get_samp_chunksize(wakenet_data_);
 }
 
-void EspWakeWord::EncodeWakeWordData() {
-}
+void EspWakeWord::EncodeWakeWordData() {}
 
-bool EspWakeWord::GetWakeWordOpus(std::vector<uint8_t>& opus) {
-    return false;
-}
+bool EspWakeWord::GetWakeWordOpus(std::vector<uint8_t>& opus) { return false; }
