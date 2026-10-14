@@ -256,19 +256,38 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
         dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
     }
 
-    // Lightweight mic diagnostics: once per ~5s, report sample count and peak.
-    // Kept outside the hot loop; Read() runs ~10ms apart, so 500 calls == 5s.
+    // Mic diagnostics: report once per ~0.5s (50 reads).
     static int mic_log_cnt = 0;
-    if (++mic_log_cnt % 500 == 0) {
-        int16_t peak = 0;
-        int n = samples < 256 ? samples : 256;
-        for (int i = 0; i < n; i++) {
-            int16_t a = dest[i] < 0 ? -dest[i] : dest[i];
-            if (a > peak) {
-                peak = a;
-            }
+    static int32_t win_peak = 0;
+    static int32_t win_raw_peak = 0;
+    static int64_t win_sum_sq = 0;
+    static int64_t win_sum = 0;
+    static int64_t win_count = 0;
+    for (int i = 0; i < samples; i++) {
+        int32_t v = dest[i];
+        int32_t a = v < 0 ? -v : v;
+        if (a > win_peak) {
+            win_peak = a;
         }
-        ESP_LOGI("MicDbg", "read#%d samples=%d peak=%d", mic_log_cnt, (int)samples, (int)peak);
+        int32_t raw = bit32_buffer[i];
+        int32_t raw_abs = raw < 0 ? -(raw == INT32_MIN ? INT32_MIN + 1 : raw) : raw;
+        if (raw_abs > win_raw_peak) {
+            win_raw_peak = raw_abs;
+        }
+        win_sum_sq += (int64_t)v * v;
+        win_sum += v;
+    }
+    win_count += samples;
+    if (++mic_log_cnt % 50 == 0 && win_count > 0) {
+        int32_t rms = (int32_t)sqrt((double)win_sum_sq / (double)win_count);
+        int32_t dc = (int32_t)(win_sum / win_count);
+        ESP_LOGI("MicDbg", "win peak=%d rms=%d dc=%d raw=%d", (int)win_peak, (int)rms, (int)dc,
+                 (int)win_raw_peak);
+        win_peak = 0;
+        win_raw_peak = 0;
+        win_sum_sq = 0;
+        win_sum = 0;
+        win_count = 0;
     }
     return samples;
 }
