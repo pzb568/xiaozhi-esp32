@@ -16,7 +16,12 @@
  * 注释掉下面的 AUDIO_I2S_METHOD_SIMPLEX_DUPLEX 宏即可（见 README）。
  */
 
-#define AUDIO_INPUT_SAMPLE_RATE  24000
+// WakeNet10 (wn10_nihaoxiaozhi) is a 16 kHz model; every other INMP441 +
+// NoAudioCodec board samples the mic at 16 kHz. Sampling at 24 kHz forces a
+// low-quality 24k->16k resample in AudioService that distorts the wake-word
+// feature extraction, so keep the input at 16 kHz and let the codec upsample
+// for playback only.
+#define AUDIO_INPUT_SAMPLE_RATE  16000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
 
 // 选择接线模式：默认 Duplex（共用时钟，接线最简）
