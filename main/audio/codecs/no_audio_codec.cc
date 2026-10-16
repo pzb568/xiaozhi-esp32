@@ -252,7 +252,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     // >>12 keeps original full-scale, but INMP441 is typically ~-26 dBFS.
     // >>10 applies 4x (12 dB) gain to bring speech level into WakeNet range.
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 12;
+        int32_t value = bit32_buffer[i] >> 10;
         dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
     }
 
