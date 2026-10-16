@@ -113,7 +113,9 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
 
     // Lightweight wake diagnostics: once per ~5s, report detect count and
     // buffer peak. Outside the hot loop, so it cannot starve detection.
-    if (detect_cnt % 100 == 0) {
+    static int last_logged_cnt = -1;
+    if (detect_cnt % 100 == 0 && detect_cnt != last_logged_cnt) {
+        last_logged_cnt = detect_cnt;
         ESP_LOGI("WakeDbg", "detect#%d res=%d peak=%d", detect_cnt, last_res, feed_peak);
         feed_peak = 0;
     }

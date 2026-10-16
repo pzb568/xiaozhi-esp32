@@ -37,7 +37,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
+			#if SOC_I2S_HW_VERSION_2
 				.ext_clk_freq_hz = 0,
 			#endif
 
@@ -50,7 +50,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false
@@ -98,7 +98,7 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
+			#if SOC_I2S_HW_VERSION_2
 				.ext_clk_freq_hz = 0,
 			#endif
 
@@ -111,7 +111,7 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false
@@ -167,7 +167,7 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
+			#if SOC_I2S_HW_VERSION_2
 				.ext_clk_freq_hz = 0,
 			#endif
 
@@ -180,7 +180,7 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false
@@ -249,8 +249,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
 
     samples = bytes_read / sizeof(int32_t);
     // INMP441 outputs 24-bit left-aligned in 32-bit frame.
-    // >>12 keeps original full-scale, but INMP441 is typically ~-26 dBFS.
-    // >>10 applies 4x (12 dB) gain to bring speech level into WakeNet range.
+    // >>12 matches upstream (16x gain over a 16-bit scale). Do not change without testing wake word.
     for (int i = 0; i < samples; i++) {
         int32_t value = bit32_buffer[i] >> 12;
         dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
@@ -344,7 +343,7 @@ NoAudioCodecSimplexPdm::NoAudioCodecSimplexPdm(int input_sample_rate, int output
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
+			#if SOC_I2S_HW_VERSION_2
 				.ext_clk_freq_hz = 0,
 			#endif
 
@@ -357,7 +356,7 @@ NoAudioCodecSimplexPdm::NoAudioCodecSimplexPdm(int input_sample_rate, int output
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false
