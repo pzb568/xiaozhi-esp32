@@ -88,11 +88,13 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     }
 
     int chunksize = wakenet_iface_->get_samp_chunksize(wakenet_data_);
+    static int last_res = 0;
     static int detect_cnt = 0;
     static int feed_peak = 0;
 
     while (input_buffer_.size() >= chunksize) {
         int res = wakenet_iface_->detect(wakenet_data_, input_buffer_.data());
+        last_res = res;
         detect_cnt++;
         if ((int)input_buffer_.size() > feed_peak)
             feed_peak = (int)input_buffer_.size();
@@ -111,8 +113,8 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
 
     // Lightweight wake diagnostics: once per ~5s, report detect count and
     // buffer peak. Outside the hot loop, so it cannot starve detection.
-    if (detect_cnt % 500 == 0) {
-        ESP_LOGI("WakeDbg", "detect#%d chunk=%d buf_peak=%d", detect_cnt, chunksize, feed_peak);
+    if (detect_cnt % 100 == 0) {
+        ESP_LOGI("WakeDbg", "detect#%d res=%d peak=%d", detect_cnt, last_res, feed_peak);
         feed_peak = 0;
     }
 }
