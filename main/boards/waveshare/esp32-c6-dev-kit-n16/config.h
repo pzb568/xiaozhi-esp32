@@ -17,7 +17,9 @@
  */
 
 // ESP32-C6 单 I2S 控制器：使用 Duplex，共享采样时钟。
-#define AUDIO_INPUT_SAMPLE_RATE  24000
+// 16K 输入，直接喂 WakeNet10（16kHz 模型），避免重采样失真
+// 24K 输出，保持播放音质
+#define AUDIO_INPUT_SAMPLE_RATE  16000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
 
 #define AUDIO_I2S_METHOD_DUPLEX
