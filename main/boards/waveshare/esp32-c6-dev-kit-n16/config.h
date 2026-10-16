@@ -11,22 +11,18 @@
  *   - INMP441 I2S 麦克风模块（音频输入）
  *   - NEC 红外解码模块（UART 输出，音频遥控）
  *
- * 默认使用 Duplex（全双工共用 BCLK/WS）接线方式，INMP441 与 MAX98357
- * 共用一组时钟线，只需 4 根信号线。如需 Simplex（各自独立时钟），
- * 注释掉下面的 AUDIO_I2S_METHOD_SIMPLEX_DUPLEX 宏即可（见 README）。
+ * 音频配置与上游常见配置保持一致：输入 16 kHz、输出 24 kHz。
+ * 使用 Simplex（麦克风与功放独立时钟），因此麦克风时钟线需接到
+ * GPIO2/GPIO3；功放时钟线接 GPIO4/GPIO5。请按下方 Simplex 引脚接线。
  */
 
-// WakeNet10 (wn10_nihaoxiaozhi) is a 16 kHz model; every other INMP441 +
-// NoAudioCodec board samples the mic at 16 kHz. Sampling at 24 kHz forces a
-// low-quality 24k->16k resample in AudioService that distorts the wake-word
-// feature extraction, so keep the input at 16 kHz and let the codec upsample
-// for playback only.
+// 与上游常见音频采样率配置保持一致：麦克风 16 kHz、扬声器 24 kHz。
+// 需要使用 Simplex，因为 Duplex 共用时钟，不能独立运行输入/输出采样率。
 #define AUDIO_INPUT_SAMPLE_RATE  16000
-#define AUDIO_OUTPUT_SAMPLE_RATE 16000
+#define AUDIO_OUTPUT_SAMPLE_RATE 24000
 
-// 选择接线模式：默认 Duplex（共用时钟，接线最简）
-// 如需 Simplex（功放/麦克风各用一组 BCLK/WS），注释掉下面这行
-#define AUDIO_I2S_METHOD_DUPLEX
+// 使用 Simplex：麦克风和功放分别使用独立的 BCLK/WS。
+// 不要定义 AUDIO_I2S_METHOD_DUPLEX。
 
 #ifdef AUDIO_I2S_METHOD_DUPLEX
 
