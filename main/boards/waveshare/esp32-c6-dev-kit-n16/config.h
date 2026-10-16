@@ -38,7 +38,7 @@
 
 #else
 
-// -------- Simplex：功放与麦克风分开两组时钟（备用方案）--------
+// -------- Simplex：默认模式，功放与麦克风分开两组时钟 --------
 // 功放：GPIO4=BCLK, GPIO5=LRC, GPIO6=DIN
 // 麦克风：GPIO2=SCK, GPIO3=WS, GPIO7=SD
 #define AUDIO_I2S_MIC_GPIO_WS    GPIO_NUM_3
