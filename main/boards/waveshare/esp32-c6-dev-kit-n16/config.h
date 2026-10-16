@@ -22,7 +22,7 @@
 // feature extraction, so keep the input at 16 kHz and let the codec upsample
 // for playback only.
 #define AUDIO_INPUT_SAMPLE_RATE  16000
-#define AUDIO_OUTPUT_SAMPLE_RATE 24000
+#define AUDIO_OUTPUT_SAMPLE_RATE 16000
 
 // 选择接线模式：默认 Duplex（共用时钟，接线最简）
 // 如需 Simplex（功放/麦克风各用一组 BCLK/WS），注释掉下面这行
