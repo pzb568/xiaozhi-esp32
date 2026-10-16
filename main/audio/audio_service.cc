@@ -216,6 +216,17 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
                                     (esp_ae_sample_t)resampled.data(), &actual_output);
             resampled.resize(actual_output * codec_->input_channels());
             data = std::move(resampled);
+            static int rs_cnt = 0;
+            if (++rs_cnt % 100 == 0) {
+                ESP_LOGI("RsDbg", "in=%u out=%u data_size=%u",
+                         in_sample_num, actual_output, (unsigned)data.size());
+            }
+        } else {
+            static int no_rs_cnt = 0;
+            if (++no_rs_cnt % 100 == 0) {
+                ESP_LOGW("RsDbg", "NO RESAMPLER! codec_rate=%d target=%d",
+                         codec_->input_sample_rate(), sample_rate);
+            }
         }
     } else {
         data.resize(samples * codec_->input_channels());
