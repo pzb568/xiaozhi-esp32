@@ -16,11 +16,10 @@
  * 的 Simplex 驱动。
  */
 
-// ESP32-C6 单 I2S 控制器：使用 Duplex，共享采样时钟。
-// 16K 输入，直接喂 WakeNet10（16kHz 模型），避免重采样失真
-// 24K 输出，保持播放音质
+// ESP32-C6 单 I2S 控制器：Duplex 模式输入输出必须同频！
+// 都设 16K，麦克风直采 16K 喂 WakeNet，功放播放 16K
 #define AUDIO_INPUT_SAMPLE_RATE  16000
-#define AUDIO_OUTPUT_SAMPLE_RATE 24000
+#define AUDIO_OUTPUT_SAMPLE_RATE 16000
 
 #define AUDIO_I2S_METHOD_DUPLEX
 
