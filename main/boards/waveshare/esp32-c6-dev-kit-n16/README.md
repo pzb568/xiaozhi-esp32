@@ -5,18 +5,18 @@
 
 | 外设 | 型号 | 接口 |
 | --- | --- | --- |
-| 功放 | MAX98357A I2S 功放模块 | I2S（独立输出时钟） |
+| 功放 | MAX98357A I2S 功放模块 | I2S（与麦克风共用时钟） |
 | 喇叭 | 40mm 内磁 4Ω 3W 全频喇叭 | 接 MAX98357 喇叭端子 |
-| 麦克风 | INMP441 I2S 麦克风模块 | I2S（独立输入时钟） |
+| 麦克风 | INMP441 I2S 麦克风模块 | I2S（与功放共用时钟） |
 | 红外收发 | NEC 红外收发一体模块（YS-IRTM 兼容） | UART 9600（收发双向） |
 | 空调控制 | 940nm 红外发射管 + 100Ω 电阻 | GPIO10（RMT 直驱 38kHz） |
 
 板载 WS2812 RGB LED（GPIO8）用于显示设备状态，BOOT 键（GPIO9）可
 手动开始/停止对话。
 
-## 接线表（默认：Simplex 独立时钟）
+## 接线表（默认：Duplex 共用时钟）
 
-麦克风与功放分别使用自己的 BCLK / WS 时钟线，共 6 根信号线。此模式支持上游常见的输入 16 kHz、输出 24 kHz 配置：
+ESP32-C6 使用同一 I²S 控制器连接麦克风和功放，两者共用 BCLK / WS 时钟线，共 4 根信号线。输入和输出采样率必须设为相同值；当前配置为 24 kHz / 24 kHz。
 
 ### MAX98357 功放模块
 
@@ -25,8 +25,8 @@
 | VIN | 5V（USB 供电时可用板上 5V） | 2.5~5.5V，5V 时输出功率最大（4Ω 负载约 3W） |
 | GND | GND | 共地 |
 | DIN | GPIO6 | I2S 数据（ESP → 功放） |
-| BCLK | GPIO4 | 功放独立时钟 |
-| LRC | GPIO5 | 功放独立时钟 |
+| BCLK | GPIO4 | 与 INMP441 SCK 并接，共用时钟 |
+| LRC | GPIO5 | 与 INMP441 WS 并接，共用时钟 |
 | SD | 悬空 | 悬空 = (L+R)/2 单声道输出 |
 | GAIN | 悬空 | 悬空 = 9dB 增益（接 GND 12dB / 接 3.3V 6dB） |
 
@@ -38,8 +38,8 @@
 | --- | --- | --- |
 | VDD | 3.3V | 只能接 3.3V |
 | GND | GND | 共地 |
-| SCK | GPIO2 | 麦克风独立时钟 |
-| WS | GPIO3 | 麦克风独立时钟 |
+| SCK | GPIO4 | 与 MAX98357 BCLK 并接，共用时钟 |
+| WS | GPIO5 | 与 MAX98357 LRC 并接，共用时钟 |
 | SD | GPIO7 | I2S 数据（麦克风 → ESP） |
 | L/R | GND | 接 GND = 左声道（必须接） |
 
@@ -75,9 +75,9 @@ GPIO10 ── 100Ω电阻 ──▶|── 发射管正极(长脚)   发射管�
 - 支持品牌：**格力（gree）/ 美的（midea）/ 海尔（haier）**，
   时序协议移植自 IRremoteESP8266 开源库
 
-## 备选接线：Duplex 共用时钟模式
+## Simplex 模式说明
 
-只有在输入和输出采样率设置为相同数值时才使用 Duplex。若要启用，编辑本目录 `config.h`，定义 `AUDIO_I2S_METHOD_DUPLEX`，并将 `AUDIO_INPUT_SAMPLE_RATE` 与 `AUDIO_OUTPUT_SAMPLE_RATE` 设为相同值；此时 INMP441 SCK/WS 分别与 MAX98357 BCLK/LRC 并接：
+当前 ESP32-C6 的通用 `NoAudioCodecSimplex` 实现会尝试创建 `I2S port 1`，但本芯片没有该端口，启动时会报 `invalid I2S port id`。因此本板默认使用 Duplex，共用时钟；不要在此板配置中关闭 `AUDIO_I2S_METHOD_DUPLEX`。
 
 | 功能 | ESP32-C6 引脚 |
 | --- | --- |
