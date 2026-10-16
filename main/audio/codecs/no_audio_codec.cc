@@ -248,14 +248,17 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     }
 
     samples = bytes_read / sizeof(int32_t);
-    // INMP441 outputs 24-bit left-aligned in 32-bit frame.
-    // >>12 matches upstream (16x gain over a 16-bit scale). Do not change without testing wake word.
+    // DC 高通滤波
+    static int32_t dc_prev_in = 0;
+    static int32_t dc_prev_out = 0;
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 12;
-        dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
+        int32_t raw = bit32_buffer[i] >> 12;
+        int32_t filtered = raw - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
+        dc_prev_in = raw;
+        dc_prev_out = filtered;
+        dest[i] = (filtered > INT16_MAX) ? INT16_MAX : (filtered < -INT16_MAX) ? -INT16_MAX : (int16_t)filtered;
     }
 
-    // Mic diagnostics: report once per ~0.5s (50 reads).
     static int mic_log_cnt = 0;
     static int32_t win_peak = 0;
     static int32_t win_raw_peak = 0;
