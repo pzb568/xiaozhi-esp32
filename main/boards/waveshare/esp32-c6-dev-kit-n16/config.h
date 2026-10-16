@@ -11,18 +11,16 @@
  *   - INMP441 I2S 麦克风模块（音频输入）
  *   - NEC 红外解码模块（UART 输出，音频遥控）
  *
- * 音频配置与上游常见配置保持一致：输入 16 kHz、输出 24 kHz。
- * 使用 Simplex（麦克风与功放独立时钟），因此麦克风时钟线需接到
- * GPIO2/GPIO3；功放时钟线接 GPIO4/GPIO5。请按下方 Simplex 引脚接线。
+ * 默认使用 Duplex（全双工共用 BCLK/WS）接线方式，INMP441 与 MAX98357
+ * 共用一组时钟线。ESP32-C6 只有一个可用 I2S 控制器，不使用需要 I2S port 1
+ * 的 Simplex 驱动。
  */
 
-// 与上游常见音频采样率配置保持一致：麦克风 16 kHz、扬声器 24 kHz。
-// 需要使用 Simplex，因为 Duplex 共用时钟，不能独立运行输入/输出采样率。
-#define AUDIO_INPUT_SAMPLE_RATE  16000
+// ESP32-C6 单 I2S 控制器：使用 Duplex，共享采样时钟。
+#define AUDIO_INPUT_SAMPLE_RATE  24000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
 
-// 使用 Simplex：麦克风和功放分别使用独立的 BCLK/WS。
-// 不要定义 AUDIO_I2S_METHOD_DUPLEX。
+#define AUDIO_I2S_METHOD_DUPLEX
 
 #ifdef AUDIO_I2S_METHOD_DUPLEX
 
@@ -38,7 +36,7 @@
 
 #else
 
-// -------- Simplex：默认模式，功放与麦克风分开两组时钟 --------
+// -------- Simplex：备用实现（要求独立 I2S port，ESP32-C6 不适用）--------
 // 功放：GPIO4=BCLK, GPIO5=LRC, GPIO6=DIN
 // 麦克风：GPIO2=SCK, GPIO3=WS, GPIO7=SD
 #define AUDIO_I2S_MIC_GPIO_WS    GPIO_NUM_3
