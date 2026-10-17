@@ -256,7 +256,9 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
         int32_t filtered = raw - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
         dc_prev_in = raw;
         dc_prev_out = filtered;
-        dest[i] = (filtered > INT16_MAX) ? INT16_MAX : (filtered < -INT16_MAX) ? -INT16_MAX : (int16_t)filtered;
+        // 4x 增益放大，把 4500 的峰值提升到 18000，满足 WakeNet 的阈值
+        int32_t amplified = filtered * 4;
+        dest[i] = (amplified > INT16_MAX) ? INT16_MAX : (amplified < -INT16_MAX) ? -INT16_MAX : (int16_t)amplified;
     }
 
     static int mic_log_cnt = 0;
