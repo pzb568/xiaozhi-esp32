@@ -72,6 +72,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
     };
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle_, &std_cfg));
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_handle_, &std_cfg));
+    gpio_set_pull_mode(din, GPIO_PULLUP_ONLY);  // DEBUG: SD floating test
     ESP_LOGI(TAG, "Duplex channels created");
 }
 
