@@ -3,6 +3,7 @@
 #include "assets/lang_config.h"
 #include "audio_codec.h"
 #include "board.h"
+#include "cjson_utils.h"
 #include "display.h"
 #include "mcp_server.h"
 #include "mqtt_protocol.h"
@@ -702,12 +703,16 @@ void Application::InitializeProtocol() {
 #if CONFIG_RECEIVE_CUSTOM_MESSAGE
         } else if (strcmp(type->valuestring, "custom") == 0) {
             auto payload = cJSON_GetObjectItem(root, "payload");
-            ESP_LOGI(TAG, "Received custom message: %s", cJSON_PrintUnformatted(root));
+            CJsonStringUniquePtr root_json(cJSON_PrintUnformatted(root));
+            ESP_LOGI(TAG, "Received custom message: %s", root_json ? root_json.get() : "");
             if (cJSON_IsObject(payload)) {
-                Schedule(
-                    [this, display, payload_str = std::string(cJSON_PrintUnformatted(payload))]() {
-                        display->SetChatMessage("system", payload_str.c_str());
-                    });
+                CJsonStringUniquePtr payload_json(cJSON_PrintUnformatted(payload));
+                if (payload_json) {
+                    Schedule(
+                        [this, display, payload_str = std::string(payload_json.get())]() {
+                            display->SetChatMessage("system", payload_str.c_str());
+                        });
+                }
             } else {
                 ESP_LOGW(TAG, "Invalid custom message format: missing payload");
             }
@@ -1044,14 +1049,14 @@ void Application::HandleStateChangedEvent() {
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_service_.EnableVoiceProcessing(false);
                 // Only AFE wake word can be detected in speaking mode
-                audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+                audio_service_.EnableWakeWordDetection(true);
             }
             audio_service_.ResetDecoder();
             break;
         case kDeviceStateNotifying:
             display->SetStatus(Lang::Strings::SPEAKING);
             audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+            audio_service_.EnableWakeWordDetection(true);
             break;
         case kDeviceStateWifiConfiguring:
             audio_service_.EnableVoiceProcessing(false);
@@ -1086,7 +1091,7 @@ void Application::StartListeningAudio() {
 void Application::ConfigureWakeWordForListening() {
 #ifdef CONFIG_WAKE_WORD_DETECTION_IN_LISTENING
     // Enable wake word detection in listening mode (configured via Kconfig)
-    audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+    audio_service_.EnableWakeWordDetection(true);
 #else
     // Disable wake word detection in listening mode
     audio_service_.EnableWakeWordDetection(false);
@@ -1102,7 +1107,7 @@ void Application::StartNotification(std::string audio_url, std::vector<NotifySub
     auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::PERFORMANCE);
     audio_service_.EnableVoiceProcessing(false);
-    audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+    audio_service_.EnableWakeWordDetection(true);
     audio_service_.ReleaseWakeWordResources();
     while (audio_service_.PopPacketFromSendQueue()) {
         // Discard microphone audio left over from a previous conversation.

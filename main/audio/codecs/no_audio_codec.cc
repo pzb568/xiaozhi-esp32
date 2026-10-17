@@ -36,10 +36,10 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
         .clk_cfg = {
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
+#if SOC_I2S_HW_VERSION_2
+            .ext_clk_freq_hz = 0,
+#endif
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
-				.ext_clk_freq_hz = 0,
-			#endif
 
         },
         .slot_cfg = {
@@ -50,7 +50,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false
@@ -97,10 +97,10 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
         .clk_cfg = {
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
+#if SOC_I2S_HW_VERSION_2
+            .ext_clk_freq_hz = 0,
+#endif
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
-				.ext_clk_freq_hz = 0,
-			#endif
 
         },
         .slot_cfg = {
@@ -111,7 +111,7 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false
@@ -166,10 +166,10 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
         .clk_cfg = {
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
+#if SOC_I2S_HW_VERSION_2
+            .ext_clk_freq_hz = 0,
+#endif
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
-				.ext_clk_freq_hz = 0,
-			#endif
 
         },
         .slot_cfg = {
@@ -180,7 +180,7 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false
@@ -248,9 +248,50 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     }
 
     samples = bytes_read / sizeof(int32_t);
+    // DC 高通滤波
+    static int32_t dc_prev_in = 0;
+    static int32_t dc_prev_out = 0;
     for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 12;
-        dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
+        int32_t raw = bit32_buffer[i] >> 12;
+        int32_t filtered = raw - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
+        dc_prev_in = raw;
+        dc_prev_out = filtered;
+        // 4x 增益放大，把 4500 的峰值提升到 18000，满足 WakeNet 的阈值
+        int32_t amplified = filtered * 4;
+        dest[i] = (amplified > INT16_MAX) ? INT16_MAX : (amplified < -INT16_MAX) ? -INT16_MAX : (int16_t)amplified;
+    }
+
+    static int mic_log_cnt = 0;
+    static int32_t win_peak = 0;
+    static int32_t win_raw_peak = 0;
+    static int64_t win_sum_sq = 0;
+    static int64_t win_sum = 0;
+    static int64_t win_count = 0;
+    for (int i = 0; i < samples; i++) {
+        int32_t v = dest[i];
+        int32_t a = v < 0 ? -v : v;
+        if (a > win_peak) {
+            win_peak = a;
+        }
+        int32_t raw = bit32_buffer[i];
+        int32_t raw_abs = raw < 0 ? -(raw == INT32_MIN ? INT32_MIN + 1 : raw) : raw;
+        if (raw_abs > win_raw_peak) {
+            win_raw_peak = raw_abs;
+        }
+        win_sum_sq += (int64_t)v * v;
+        win_sum += v;
+    }
+    win_count += samples;
+    if (++mic_log_cnt % 50 == 0 && win_count > 0) {
+        int32_t rms = (int32_t)sqrt((double)win_sum_sq / (double)win_count);
+        int32_t dc = (int32_t)(win_sum / win_count);
+        ESP_LOGI("MicDbg", "win peak=%d rms=%d dc=%d raw=%d", (int)win_peak, (int)rms, (int)dc,
+                 (int)win_raw_peak);
+        win_peak = 0;
+        win_raw_peak = 0;
+        win_sum_sq = 0;
+        win_sum = 0;
+        win_count = 0;
     }
     return samples;
 }
@@ -306,10 +347,10 @@ NoAudioCodecSimplexPdm::NoAudioCodecSimplexPdm(int input_sample_rate, int output
         .clk_cfg = {
             .sample_rate_hz = (uint32_t)output_sample_rate_,
             .clk_src = I2S_CLK_SRC_DEFAULT,
+#if SOC_I2S_HW_VERSION_2
+            .ext_clk_freq_hz = 0,
+#endif
             .mclk_multiple = I2S_MCLK_MULTIPLE_256,
-			#ifdef   I2S_HW_VERSION_2
-				.ext_clk_freq_hz = 0,
-			#endif
 
         },
         .slot_cfg = {
@@ -320,7 +361,7 @@ NoAudioCodecSimplexPdm::NoAudioCodecSimplexPdm(int input_sample_rate, int output
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #ifdef   I2S_HW_VERSION_2
+            #if SOC_I2S_HW_VERSION_2
                 .left_align = true,
                 .big_endian = false,
                 .bit_order_lsb = false

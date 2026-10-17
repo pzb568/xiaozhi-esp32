@@ -216,6 +216,17 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
                                     (esp_ae_sample_t)resampled.data(), &actual_output);
             resampled.resize(actual_output * codec_->input_channels());
             data = std::move(resampled);
+            static int rs_cnt = 0;
+            if (++rs_cnt % 100 == 0) {
+                ESP_LOGI("RsDbg", "in=%u out=%u data_size=%u",
+                         in_sample_num, actual_output, (unsigned)data.size());
+            }
+        } else {
+            static int no_rs_cnt = 0;
+            if (++no_rs_cnt % 100 == 0) {
+                ESP_LOGW("RsDbg", "NO RESAMPLER! codec_rate=%d target=%d",
+                         codec_->input_sample_rate(), sample_rate);
+            }
         }
     } else {
         data.resize(samples * codec_->input_channels());
@@ -659,7 +670,7 @@ std::unique_ptr<AudioStreamPacket> AudioService::PopWakeWordPacket() {
 }
 
 void AudioService::EnableWakeWordDetection(bool enable) {
-    ESP_LOGD(TAG, "%s wake word detection", enable ? "Enabling" : "Disabling");
+    ESP_LOGI(TAG, "[WAKE] %s wake word detection", enable ? "Enabling" : "Disabling");
     if (enable) {
         if (!InitializeAudioEngine()) {
             xEventGroupClearBits(event_group_, AS_EVENT_WAKE_WORD_RUNNING);
@@ -707,7 +718,7 @@ void AudioService::ReleaseWakeWordResources() {
 }
 
 void AudioService::EnableVoiceProcessing(bool enable) {
-    ESP_LOGD(TAG, "%s voice processing", enable ? "Enabling" : "Disabling");
+    ESP_LOGI(TAG, "[VOICE] %s voice processing", enable ? "Enabling" : "Disabling");
 
     if (enable) {
         if (!InitializeAudioEngine()) {
