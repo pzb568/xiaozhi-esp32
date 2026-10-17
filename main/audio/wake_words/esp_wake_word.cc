@@ -42,7 +42,7 @@ bool EspWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
         ESP_LOGE(TAG, "No WakeNet interface found for %s", model_name);
         return false;
     }
-    wakenet_data_ = wakenet_iface_->create(model_name, DET_MODE_90);
+    wakenet_data_ = wakenet_iface_->create(model_name, DET_MODE_95);
     if (wakenet_data_ == nullptr) {
         ESP_LOGE(TAG, "Failed to create WakeNet model %s", model_name);
         return false;
