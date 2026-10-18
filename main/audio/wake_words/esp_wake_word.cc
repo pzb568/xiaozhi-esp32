@@ -51,7 +51,7 @@ bool EspWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
         ESP_LOGE(TAG, "No WakeNet interface found for %s", model_name);
         return false;
     }
-    // DET_MODE_90：放宽检测模式（较 DET_MODE_95 阈值更低、召回更高），
+    // DET_MODE_90：放宽检测模式（较 DET_MODE_90 阈值更低、召回更高），
     // 适配远场/灵敏度偏低的麦克风场景，提高"你好小智"的唤醒成功率
     wakenet_data_ = wakenet_iface_->create(model_name, DET_MODE_90);
     if (wakenet_data_ == nullptr) {

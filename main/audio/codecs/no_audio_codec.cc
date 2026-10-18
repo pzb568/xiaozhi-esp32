@@ -315,127 +315,40 @@ int NoAudioCodec::Write(const int16_t* data, int samples) {
 }
 
 int NoAudioCodec::Read(int16_t* dest, int samples) {
+    // 读取双倍数据以提取 Left 声道（跳过右声道的 0）
+    std::vector<int32_t> bit32_buffer(samples * 2);
     size_t bytes_read;
-    constexpr uint32_t kReadTimeoutMs = 200;
-
-    if (stereo_slots_) {
-        // 立体声帧结构：每帧含两个 32-bit slot，DMA 按交错顺序存入缓冲。
-        // INMP441（L/R 引脚接 GND）只在其锁存 slot 输出有效数据，
-        // 另一 slot 为三态浮空残留（跟随上一 slot 末尾符号扩展位电平）。
-        std::vector<int32_t> bit32_buffer(samples * 2);
-        if (i2s_channel_read(rx_handle_, bit32_buffer.data(), samples * 2 * sizeof(int32_t), &bytes_read, kReadTimeoutMs) != ESP_OK) {
-            return 0;
-        }
-        int frames = bytes_read / (2 * sizeof(int32_t));
-
-        // ---- slot 选择 ----
-        // 实测结论（2026-10）：INMP441 数据在**偶数索引 slot**（slot0）。
-        // 依据：自动判定版在锁定前的窗口里成功唤醒"你好小智"，
-        // 而那时的取值正是偶数索引；锁定后取到全零 slot1 即静音。
-        // 此前 stereo 版"整流指纹"（pk+ 数倍于 pk-）经查是增益 ×8 软压缩
-        // 放大残留所致，而非 slot 取反。
-        //
-        // 保留一个仅用于"诊断输出"的旁路统计：不影响主数据通路，
-        // 仅打印两路对比，便于后续排查；只有 slot0 近乎无声时才切换到 slot1。
-        if (!slot_locked_) {
-            static int64_t s_sum[2] = {0, 0};
-            static int64_t s_sum2[2] = {0, 0};
-            static int32_t s_pkp[2] = {INT32_MIN, INT32_MIN};
-            static int32_t s_pkn[2] = {0, 0};
-            static uint32_t s_cnt[2] = {0, 0};
-            static uint32_t s_sat[2] = {0, 0};   // 饱和样本数 |v|>=32000
-            static uint32_t s_cross[2] = {0, 0}; // 过零次数（符号翻转）
-            static int32_t s_prev[2] = {0, 0};
-            for (int i = 0; i < frames; i++) {
-                for (int k = 0; k < 2; k++) {
-                    int32_t s = bit32_buffer[i * 2 + k] >> 12;
-                    s_sum2[k] += (int64_t)s * s;
-                    s_sum[k] += s;
-                    if (s > s_pkp[k]) s_pkp[k] = s;
-                    if (s < s_pkn[k]) s_pkn[k] = s;
-                    if (s >= 32000 || s <= -32000) s_sat[k]++;
-                    if ((s >= 0) != (s_prev[k] >= 0)) s_cross[k]++;
-                    s_prev[k] = s;
-                    s_cnt[k]++;
-                }
-            }
-            constexpr uint32_t kAutoDetectFrames = 72000;  // 约 3 秒 @ 24kHz
-            if (s_cnt[0] >= kAutoDetectFrames) {
-                double rms_v[2], dc_v[2], asym_v[2], zcr_v[2];
-                double sat_pct[2];
-                for (int k = 0; k < 2; k++) {
-                    rms_v[k] = std::sqrt((double)s_sum2[k] / s_cnt[k]);
-                    dc_v[k] = (double)s_sum[k] / s_cnt[k];
-                    double pkp_d = (double)s_pkp[k], pkn_d = (double)s_pkn[k];
-                    asym_v[k] = std::fabs(pkp_d + pkn_d) / (std::fabs(pkp_d) + std::fabs(pkn_d) + 1.0);
-                    zcr_v[k] = (double)s_cross[k] / s_cnt[k];
-                    sat_pct[k] = 100.0 * s_sat[k] / s_cnt[k];
-                }
-                ESP_LOGW(TAG, "[SlotSelect] slot0(偶): rms=%.0f dc=%.1f pk+=%d pk-=%d asym=%.2f zcr=%.3f",
-                         rms_v[0], dc_v[0], s_pkp[0], s_pkn[0], asym_v[0], zcr_v[0]);
-                ESP_LOGW(TAG, "[SlotSelect] slot1(奇): rms=%.0f dc=%.1f pk+=%d pk-=%d asym=%.2f zcr=%.3f",
-                         rms_v[1], dc_v[1], s_pkp[1], s_pkn[1], asym_v[1], zcr_v[1]);
-                // 默认 slot0（已实证）；仅当 slot0 近乎无声且 slot1 有信号时才切换。
-                if (rms_v[0] < 10 && rms_v[1] > 50) {
-                    stereo_slot_index_ = 1;
-                    ESP_LOGW(TAG, "[SlotSelect] slot0 无信号，回退到 slot1");
-                } else {
-                    stereo_slot_index_ = 0;
-                    ESP_LOGW(TAG, "[SlotSelect] 锁定 slot0（偶数索引，已实证为 INMP441 数据）");
-                }
-                slot_locked_ = true;
-                // ---- 麦克风数据级自检（启动 3 秒时给出一次性健康判定）----
-                const char* verdict;
-                if (rms_v[0] < 2) {
-                    verdict = "❌ 无信号：SD 数据线断路 / 麦克风未供电（查 VDD 3.3V 与 SD 接线）";
-                } else if (sat_pct[0] > 30.0) {
-                    verdict = "❌ 信号饱和：数据线疑似短路或时钟异常（查接线）";
-                } else if (rms_v[0] < 20) {
-                    verdict = "⚠️ 信号偏弱：能收到数据但幅度极低（查供电稳定性/接地）";
-                } else {
-                    verdict = "✅ 麦克风工作正常：数据、幅度、动态范围均正常";
-                }
-                ESP_LOGW(TAG, "[MicSelfTest] 麦克风自检: %s", verdict);
-                ESP_LOGW(TAG, "[MicSelfTest] slot0: rms=%.0f 饱和=%.2f%% zcr=%.3f （自检仅判定硬件通断，信噪比随供电波动需看 MicDebug）",
-                         rms_v[0], sat_pct[0], zcr_v[0]);
-            }
-        }
-
-        int idx = stereo_slot_index_;
-        for (int i = 0; i < frames; i++) {
-            int32_t value = bit32_buffer[i * 2 + idx] >> 12;
-            dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
-        }
-        // Soft-knee gain (integer math).
-        if (input_gain_ > 0) {
-            const int32_t gain_q8 = (int32_t)(input_gain_ * 256.0f);
-            for (int i = 0; i < frames; i++) {
-                dest[i] = SoftGain(dest[i], gain_q8);
-            }
-        }
-        return frames;
-    }
-
-    std::vector<int32_t> bit32_buffer(samples);
-    if (i2s_channel_read(rx_handle_, bit32_buffer.data(), samples * sizeof(int32_t), &bytes_read, kReadTimeoutMs) != ESP_OK) {
+    if (i2s_channel_read(rx_handle_, bit32_buffer.data(), samples * 2 * sizeof(int32_t), &bytes_read, 200) != ESP_OK) {
         return 0;
     }
+    
+    int slots_read = bytes_read / sizeof(int32_t);
+    int out_idx = 0;
 
-    samples = bytes_read / sizeof(int32_t);
-    for (int i = 0; i < samples; i++) {
-        int32_t value = bit32_buffer[i] >> 12;
-        dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
+    // DC 高通滤波（使用 int32_t 防止溢出）
+    static int32_t dc_prev_in = 0;
+    static int32_t dc_prev_out = 0;
+
+    for (int i = 0; i < slots_read; i += 2) {
+        // 正确的位移是 >> 16，因为 INMP441 是 24-bit 左对齐，直接右移 16 位得到 16-bit 有效数据
+        int32_t raw = bit32_buffer[i] >> 16;
+        
+        // 一阶高通: y[n] = x[n] - x[n-1] + 0.995 * y[n-1]
+        int32_t filtered = raw - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
+        dc_prev_in = raw;
+        dc_prev_out = filtered;
+        
+        // 稍微放大 2 倍即可，防止截断
+        int32_t amplified = filtered * 2;
+        
+        if (amplified > INT16_MAX) amplified = INT16_MAX;
+        if (amplified < -INT16_MAX) amplified = -INT16_MAX;
+        
+        dest[out_idx++] = (int16_t)amplified;
+        
+        if (out_idx >= samples) break;
     }
-    // 应用输入增益：采用软压缩（soft-knee）而非硬截断，
-    // 低电平线性放大、高电平平滑压缩，避免削波产生的谐波失真。
-    // 整数 soft-knee（见 SoftGain）：小信号线性放大 gain 倍，大信号渐近到 ±32767 永不过冲。
-    if (input_gain_ > 0) {
-        const int32_t gain_q8 = (int32_t)(input_gain_ * 256.0f);
-        for (int i = 0; i < samples; i++) {
-            dest[i] = SoftGain(dest[i], gain_q8);
-        }
-    }
-    return samples;
+    return out_idx;
 }
 
 void NoAudioCodec::EnableInput(bool enable) {
