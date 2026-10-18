@@ -315,28 +315,37 @@ int NoAudioCodec::Write(const int16_t* data, int samples) {
 }
 
 int NoAudioCodec::Read(int16_t* dest, int samples) {
+    // 读取双倍数据以提取左声道（跳过右声道的 0）
     std::vector<int32_t> bit32_buffer(samples * 2);
     size_t bytes_read;
     if (i2s_channel_read(rx_handle_, bit32_buffer.data(), samples * 2 * sizeof(int32_t), &bytes_read, 200) != ESP_OK) {
         return 0;
     }
+    
     int slots_read = bytes_read / sizeof(int32_t);
     int out_idx = 0;
+
     static int32_t dc_prev_in = 0;
     static int32_t dc_prev_out = 0;
+
     for (int i = 0; i < slots_read; i += 2) {
-        // INMP441 左对齐 24 位，右移 16 位得到 16 bit 纯净数据
-        int32_t raw = bit32_buffer[i] >> 16;
+        // 恢复 >> 12 位移（Claude的 >> 16 会截断小信号）
+        int32_t raw = bit32_buffer[i] >> 12;
+        
+        // 一阶 DC 高通滤波
         int32_t filtered = raw - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
         dc_prev_in = raw;
         dc_prev_out = filtered;
         
-        // 软件 2 倍增益
-        int32_t amplified = filtered * 2; 
+        // 乘 4 倍软件增益
+        int32_t amplified = filtered * 4;
         
+        // 安全截断
         if (amplified > INT16_MAX) amplified = INT16_MAX;
         if (amplified < -INT16_MAX) amplified = -INT16_MAX;
+        
         dest[out_idx++] = (int16_t)amplified;
+        
         if (out_idx >= samples) break;
     }
     return out_idx;
