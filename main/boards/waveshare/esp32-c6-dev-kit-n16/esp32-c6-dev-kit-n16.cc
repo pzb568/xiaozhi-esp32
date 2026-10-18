@@ -240,6 +240,9 @@ public:
             AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS,
             AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
+        // 麦克风输入增益 ×8 + tanh 软压缩（在 no_audio_codec.cc Read 中应用），
+        // 2026-10-06 真机实证唤醒成功所用的配置
+        audio_codec.SetInputGain(8.0f);
 #else
         // 简单模式：功放与麦克风各自独立时钟
         static NoAudioCodecSimplex audio_codec(
