@@ -1,6 +1,11 @@
 #include "esp_wake_word.h"
 #include <esp_log.h>
 #include <esp_timer.h>
+#include <esp_heap_caps.h>
+#include <mbedtls/base64.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <cstdio>
 #include <cmath>
 #include <string>
 
@@ -100,6 +105,53 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     if (wakenet_data_ == nullptr) {
         return;
     }
+
+    // ---- PcmDump (debug, remove later) ----
+    // Once uptime >= 30 s: record 4 s of the exact 16 kHz stream WakeNet receives (decimated to 8 kHz),
+    // then print it as base64 lines "PCM <n> <data>". Speak the wake word repeatedly during the 4 s.
+    {
+        constexpr int kDumpSamples = 8000 * 4;
+        static int16_t* pcm = nullptr;
+        static int pcm_len = 0;
+        static int pcm_state = 0;  // 0 waiting, 1 recording, 2 done
+        static int acc = 0, acc_n = 0;
+        if (pcm_state == 0 && esp_timer_get_time() / 1000000 >= 30) {
+            pcm = (int16_t*)heap_caps_malloc(kDumpSamples * sizeof(int16_t), MALLOC_CAP_8BIT);
+            pcm_state = pcm ? 1 : 2;
+            ESP_LOGW("PcmDump", "%s", pcm ? "START - speak the wake word now for 4 s" : "malloc failed");
+        }
+        if (pcm_state == 1) {
+            int dch = codec_->input_channels() > 1 ? codec_->input_channels() : 1;
+            for (size_t i = 0; i + dch - 1 < data.size() && pcm_len < kDumpSamples; i += dch) {
+                acc += data[i];
+                if (++acc_n == 2) {
+                    pcm[pcm_len++] = (int16_t)(acc / 2);
+                    acc = 0;
+                    acc_n = 0;
+                }
+            }
+            if (pcm_len >= kDumpSamples) {
+                pcm_state = 2;
+                ESP_LOGW("PcmDump", "DUMP BEGIN rate=8000 samples=%d", pcm_len);
+                constexpr int kLineBytes = 192;
+                unsigned char out[4 * kLineBytes / 3 + 8];
+                const uint8_t* bytes = (const uint8_t*)pcm;
+                int total = pcm_len * (int)sizeof(int16_t);
+                for (int off = 0, seq = 0; off < total; off += kLineBytes, seq++) {
+                    size_t n = total - off < kLineBytes ? total - off : kLineBytes;
+                    size_t olen = 0;
+                    mbedtls_base64_encode(out, sizeof(out), &olen, bytes + off, n);
+                    out[olen] = 0;
+                    printf("PCM %d %s\n", seq, (char*)out);
+                    vTaskDelay(pdMS_TO_TICKS(30));
+                }
+                ESP_LOGW("PcmDump", "DUMP END");
+                heap_caps_free(pcm);
+                pcm = nullptr;
+            }
+        }
+    }
+    // ---- PcmDump end ----
 
     // ---- MicDebug 诊断：统计实际送入唤醒引擎的音量 + 信号质量，每秒打印一次 ----
     // RMS=0        : I2S 完全无数据（接线/驱动问题）
