@@ -315,7 +315,7 @@ int NoAudioCodec::Write(const int16_t* data, int samples) {
 }
 
 int NoAudioCodec::Read(int16_t* dest, int samples) {
-    // 读取双倍数据以提取左声道（跳过右声道的 0）
+    // 提取左声道，跳过右声道的 0
     std::vector<int32_t> bit32_buffer(samples * 2);
     size_t bytes_read;
     if (i2s_channel_read(rx_handle_, bit32_buffer.data(), samples * 2 * sizeof(int32_t), &bytes_read, 200) != ESP_OK) {
@@ -329,21 +329,15 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
     static int32_t dc_prev_out = 0;
 
     for (int i = 0; i < slots_read; i += 2) {
-        // 恢复 >> 12 位移（Claude的 >> 16 会截断小信号）
         int32_t raw = bit32_buffer[i] >> 12;
-        
-        // 一阶 DC 高通滤波
         int32_t filtered = raw - dc_prev_in + (int32_t)(0.995f * dc_prev_out);
         dc_prev_in = raw;
         dc_prev_out = filtered;
         
-        // 乘 4 倍软件增益
+        // 软件 4 倍增益（完全够用，千万别再乘硬件增益了）
         int32_t amplified = filtered * 4;
-        
-        // 安全截断
         if (amplified > INT16_MAX) amplified = INT16_MAX;
         if (amplified < -INT16_MAX) amplified = -INT16_MAX;
-        
         dest[out_idx++] = (int16_t)amplified;
         
         if (out_idx >= samples) break;
