@@ -181,7 +181,8 @@ private:
                 }
                 int address = properties["address"].value<int>();
                 int command = properties["command"].value<int>();
-                // 低字节在前（NEC 发送顺序）
+                // 实际行为：address 低字节作为第 1 个用户码字节发送，高字节作为第 2 个
+                // （是否与 YS-IRTM 模块期望一致需真机验证）
                 uint8_t u1 = address & 0xFF;
                 uint8_t u2 = (address >> 8) & 0xFF;
                 if (ir_remote_->SendNec(u1, u2, (uint8_t)command)) {
@@ -239,8 +240,9 @@ public:
         static NoAudioCodecDuplex audio_codec(
             AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS,
-            AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
-        // 麦克风输入增益 ×8 + tanh 软压缩（在 no_audio_codec.cc Read 中应用），
+            AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN,
+            /*stereo_frame=*/true);  // INMP441 需 SCK=rate*64，使用立体声帧
+        // 麦克风输入增益 ×8 + 整数 soft-knee 软压缩（在 no_audio_codec.cc Read 中应用），
         // 2026-10-06 真机实证唤醒成功所用的配置
         audio_codec.SetInputGain(8.0f);
 #else

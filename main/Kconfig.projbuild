@@ -652,6 +652,19 @@ choice XIAOZHI_NETWORK_TYPE
             Use the onboard Ethernet port for network access.
 endchoice
 
+config XIAOZHI_DISABLE_ASSETS
+    bool "Disable assets partition loading (board workaround)"
+    default n
+    help
+        Skip assets partition init/apply. Only for boards where loading
+        assets is known to panic (e.g. waveshare esp32-c6-dev-kit-n16).
+
+config XIAOZHI_AUDIO_DEBUG
+    bool "Enable verbose audio input debug diagnostics"
+    default n
+    help
+        Pin self-test and microphone slot statistics in NoAudioCodec.
+
 menu "Ethernet Configuration"
     depends on XIAOZHI_NETWORK_ETHERNET
 

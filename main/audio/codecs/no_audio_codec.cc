@@ -35,11 +35,12 @@ NoAudioCodec::~NoAudioCodec() {
     }
 }
 
-NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_rate, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din) {
+NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_rate, gpio_num_t bclk, gpio_num_t ws, gpio_num_t dout, gpio_num_t din, bool stereo_frame) {
     duplex_ = true;
     input_sample_rate_ = input_sample_rate;
     output_sample_rate_ = output_sample_rate;
 
+#ifdef CONFIG_XIAOZHI_AUDIO_DEBUG
     // ---- 引脚自检：I2S 初始化前，用内部上拉/下拉回读 4 根信号线 ----
     // 上拉读 1 + 下拉读 0 = 引脚悬空可驱动（正常）；
     // 两读皆 0 = 被外部死钳到 GND（对地短路/焊连）；两读皆 1 = 被钳到 VCC。
@@ -73,12 +74,13 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
         }
         ESP_LOGW(TAG, "[PinTest] 引脚自检完成。注：DIN 在麦克风无时钟时三态，悬空属正常");
     }
+#endif  // CONFIG_XIAOZHI_AUDIO_DEBUG
     // 使用标准 I2S 立体声帧结构（每帧 64 SCK）：
     // INMP441 内部 Σ-Δ 调制器设计工作点为过采样率 64（SCK = 采样率 × 64）。
     // 若用 mono 帧结构（每帧 32 SCK），SCK 减半 → 过采样率仅 32 →
     // 内部抽取滤波器失配，大量高频量化噪声泄漏（实测 zcr 0.34、dc 漂移），
     // 16kHz 时（过采样率 16）甚至完全失效输出静音。
-    stereo_slots_ = true;
+    stereo_slots_ = stereo_frame;
 
     i2s_chan_config_t chan_cfg = {
         .id = XIAOZHI_I2S_PORT(0),
@@ -105,8 +107,8 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
             .data_bit_width = I2S_DATA_BIT_WIDTH_32BIT,
             .slot_bit_width = I2S_SLOT_BIT_WIDTH_AUTO,
             // 立体声帧结构：WS = SCK/64，INMP441 内部过采样率恢复为设计值 64
-            .slot_mode = I2S_SLOT_MODE_STEREO,
-            .slot_mask = I2S_STD_SLOT_BOTH,
+            .slot_mode = stereo_frame ? I2S_SLOT_MODE_STEREO : I2S_SLOT_MODE_MONO,
+            .slot_mask = stereo_frame ? I2S_STD_SLOT_BOTH : I2S_STD_SLOT_LEFT,
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
@@ -132,7 +134,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
     };
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_handle_, &std_cfg));
     ESP_ERROR_CHECK(i2s_channel_init_std_mode(rx_handle_, &std_cfg));
-    ESP_LOGI(TAG, "Duplex channels created (stereo frame, SCK=rate*64)");
+    ESP_LOGI(TAG, "Duplex channels created (%s frame)", stereo_frame ? "stereo" : "mono");
 }
 
 
@@ -284,10 +286,8 @@ int NoAudioCodec::Write(const int16_t* data, int samples) {
 
     size_t bytes_written;
     if (stereo_slots_) {
-        // 立体声帧结构：音频数据放在 stereo_slot_index_ 对应的 slot
-        // （与 RX 自动判定结果一致，保证 MAX98357 在其锁存 slot 收到数据），
-        // 另一 slot 保持 0 静默。
-        int idx = stereo_slot_index_;
+        // 立体声帧结构：音频数据放在 kStereoSlotIndex 对应的 slot，另一 slot 保持 0 静默。
+        constexpr int idx = kStereoSlotIndex;
         std::vector<int32_t> buffer(samples * 2, 0);
         for (int i = 0; i < samples; i++) {
             int64_t temp = int64_t(data[i]) * volume_factor; // 使用 int64_t 进行乘法运算
@@ -295,7 +295,7 @@ int NoAudioCodec::Write(const int16_t* data, int samples) {
             buffer[i * 2 + idx] = value;
         }
         ESP_ERROR_CHECK(i2s_channel_write(tx_handle_, buffer.data(), samples * 2 * sizeof(int32_t), &bytes_written, portMAX_DELAY));
-        return samples;
+        return bytes_written / (2 * sizeof(int32_t));
     }
 
     std::vector<int32_t> buffer(samples);
@@ -328,80 +328,9 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
         }
         int frames = bytes_read / (2 * sizeof(int32_t));
 
-        // ---- slot 选择 ----
-        // 实测结论（2026-10）：INMP441 数据在**偶数索引 slot**（slot0）。
-        // 依据：自动判定版在锁定前的窗口里成功唤醒"你好小智"，
-        // 而那时的取值正是偶数索引；锁定后取到全零 slot1 即静音。
-        // 此前 stereo 版"整流指纹"（pk+ 数倍于 pk-）经查是增益 ×8 软压缩
-        // 放大残留所致，而非 slot 取反。
-        //
-        // 保留一个仅用于"诊断输出"的旁路统计：不影响主数据通路，
-        // 仅打印两路对比，便于后续排查；只有 slot0 近乎无声时才切换到 slot1。
-        if (!slot_locked_) {
-            static int64_t s_sum[2] = {0, 0};
-            static int64_t s_sum2[2] = {0, 0};
-            static int32_t s_pkp[2] = {INT32_MIN, INT32_MIN};
-            static int32_t s_pkn[2] = {0, 0};
-            static uint32_t s_cnt[2] = {0, 0};
-            static uint32_t s_sat[2] = {0, 0};   // 饱和样本数 |v|>=32000
-            static uint32_t s_cross[2] = {0, 0}; // 过零次数（符号翻转）
-            static int32_t s_prev[2] = {0, 0};
-            for (int i = 0; i < frames; i++) {
-                for (int k = 0; k < 2; k++) {
-                    int32_t s = bit32_buffer[i * 2 + k] >> 12;
-                    s_sum2[k] += (int64_t)s * s;
-                    s_sum[k] += s;
-                    if (s > s_pkp[k]) s_pkp[k] = s;
-                    if (s < s_pkn[k]) s_pkn[k] = s;
-                    if (s >= 32000 || s <= -32000) s_sat[k]++;
-                    if ((s >= 0) != (s_prev[k] >= 0)) s_cross[k]++;
-                    s_prev[k] = s;
-                    s_cnt[k]++;
-                }
-            }
-            constexpr uint32_t kAutoDetectFrames = 72000;  // 约 3 秒 @ 24kHz
-            if (s_cnt[0] >= kAutoDetectFrames) {
-                double rms_v[2], dc_v[2], asym_v[2], zcr_v[2];
-                double sat_pct[2];
-                for (int k = 0; k < 2; k++) {
-                    rms_v[k] = std::sqrt((double)s_sum2[k] / s_cnt[k]);
-                    dc_v[k] = (double)s_sum[k] / s_cnt[k];
-                    double pkp_d = (double)s_pkp[k], pkn_d = (double)s_pkn[k];
-                    asym_v[k] = std::fabs(pkp_d + pkn_d) / (std::fabs(pkp_d) + std::fabs(pkn_d) + 1.0);
-                    zcr_v[k] = (double)s_cross[k] / s_cnt[k];
-                    sat_pct[k] = 100.0 * s_sat[k] / s_cnt[k];
-                }
-                ESP_LOGW(TAG, "[SlotSelect] slot0(偶): rms=%.0f dc=%.1f pk+=%d pk-=%d asym=%.2f zcr=%.3f",
-                         rms_v[0], dc_v[0], s_pkp[0], s_pkn[0], asym_v[0], zcr_v[0]);
-                ESP_LOGW(TAG, "[SlotSelect] slot1(奇): rms=%.0f dc=%.1f pk+=%d pk-=%d asym=%.2f zcr=%.3f",
-                         rms_v[1], dc_v[1], s_pkp[1], s_pkn[1], asym_v[1], zcr_v[1]);
-                // 默认 slot0（已实证）；仅当 slot0 近乎无声且 slot1 有信号时才切换。
-                if (rms_v[0] < 10 && rms_v[1] > 50) {
-                    stereo_slot_index_ = 1;
-                    ESP_LOGW(TAG, "[SlotSelect] slot0 无信号，回退到 slot1");
-                } else {
-                    stereo_slot_index_ = 0;
-                    ESP_LOGW(TAG, "[SlotSelect] 锁定 slot0（偶数索引，已实证为 INMP441 数据）");
-                }
-                slot_locked_ = true;
-                // ---- 麦克风数据级自检（启动 3 秒时给出一次性健康判定）----
-                const char* verdict;
-                if (rms_v[0] < 2) {
-                    verdict = "❌ 无信号：SD 数据线断路 / 麦克风未供电（查 VDD 3.3V 与 SD 接线）";
-                } else if (sat_pct[0] > 30.0) {
-                    verdict = "❌ 信号饱和：数据线疑似短路或时钟异常（查接线）";
-                } else if (rms_v[0] < 20) {
-                    verdict = "⚠️ 信号偏弱：能收到数据但幅度极低（查供电稳定性/接地）";
-                } else {
-                    verdict = "✅ 麦克风工作正常：数据、幅度、动态范围均正常";
-                }
-                ESP_LOGW(TAG, "[MicSelfTest] 麦克风自检: %s", verdict);
-                ESP_LOGW(TAG, "[MicSelfTest] slot0: rms=%.0f 饱和=%.2f%% zcr=%.3f （自检仅判定硬件通断，信噪比随供电波动需看 MicDebug）",
-                         rms_v[0], sat_pct[0], zcr_v[0]);
-            }
-        }
-
-        int idx = stereo_slot_index_;
+        // slot 固定为 kStereoSlotIndex（实测 INMP441 L/R 接 GND 时数据在 slot0）。
+        // 注：早期版本的运行时自动判定使用函数内 static 统计且与 Write() 存在数据竞争，已移除。
+        constexpr int idx = kStereoSlotIndex;
         for (int i = 0; i < frames; i++) {
             int32_t value = bit32_buffer[i * 2 + idx] >> 12;
             dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;

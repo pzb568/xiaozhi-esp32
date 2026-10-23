@@ -19,7 +19,7 @@
  *   B. YS-IRTM 3 字节：[用户码1] [用户码2] [命令码]
  *
  * 发射（SendNec）：
- *   通过 UART 发送 5 字节指令 [cmd_addr][0xF1][用户码高][用户码低][命令码]，
+ *   通过 UART 发送 5 字节指令 [cmd_addr][0xF1][user_code1][user_code2][命令码]，
  *   模块自动组成完整 NEC 帧从红外头发射（可控制电视/机顶盒等 99% NEC 设备）。
  *   注意：模块只能发射 NEC 格式，空调等专有协议请使用 IrTransmitter。
  *
@@ -49,8 +49,8 @@ public:
 
     /**
      * @brief 发射 NEC 红外码（控制电视等 NEC 设备）
-     * @param user_code1 用户码高字节（NEC 帧第 1 字节）
-     * @param user_code2 用户码低字节（NEC 帧第 2 字节）
+     * @param user_code1 第 1 个用户码字节（按原样发送）
+     * @param user_code2 第 2 个用户码字节（按原样发送）
      * @param command    命令码（模块自动补发反码）
      * @return true 已成功写入 UART（模块通常还会回 1 字节 0xF1 确认）
      */
