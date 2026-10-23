@@ -51,14 +51,22 @@ bool Assets::FindPartition(Assets* assets) {
 }
 
 bool Assets::Apply(bool refresh_display_theme) {
+#ifdef CONFIG_XIAOZHI_DISABLE_ASSETS
     (void)refresh_display_theme;
-    ESP_LOGW("Assets", "Assets disabled: Apply() short-circuited");
+    ESP_LOGW("Assets", "Assets disabled by CONFIG_XIAOZHI_DISABLE_ASSETS");
     return false;
+#else
+    return strategy_ ? strategy_->Apply(this, refresh_display_theme) : false;
+#endif
 }
 
 bool Assets::InitializePartition() {
-    ESP_LOGW("Assets", "Assets disabled: InitializePartition() short-circuited");
+#ifdef CONFIG_XIAOZHI_DISABLE_ASSETS
+    ESP_LOGW("Assets", "Assets disabled by CONFIG_XIAOZHI_DISABLE_ASSETS");
     return false;
+#else
+    return strategy_ ? strategy_->InitializePartition(this) : false;
+#endif
 }
 
 void Assets::UnApplyPartition() {
