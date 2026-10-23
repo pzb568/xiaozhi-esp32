@@ -20,6 +20,7 @@ os.chdir(Path(__file__).resolve().parent.parent)
 
 
 _DEFAULT_IDF_VERSION = (6, 0, 2)
+_DEFAULT_LANGUAGE = "en-US"
 
 _LITE_WAKE_WORD_TARGETS = {"esp32c3", "esp32c5", "esp32c6"}
 _AFE_WAKE_WORD_TARGETS = {"esp32s3", "esp32p4", "esp32s31"}
@@ -294,27 +295,16 @@ def _print_wake_word_list(wake_words: list[dict[str, object]]) -> None:
             f"{str(item['model']):<{model_width}}  "
             f"{str(item['phrase']):<{phrase_width}}  {targets}"
         )
-    print("\nSpecial values: nihaoxiaozhi, disabled")
-
-
-def _enabled_default_wake_word_symbols(target: str) -> list[str]:
-    """Return wake-word models enabled by the project and target defaults."""
-    symbols: list[str] = []
-    for path in (Path("sdkconfig.defaults"), Path(f"sdkconfig.defaults.{target}")):
-        if not path.exists():
-            continue
-        for line in path.read_text(encoding="utf-8").splitlines():
-            match = re.fullmatch(r"(CONFIG_SR_WN_[A-Z0-9_]+)=y", line.strip())
-            if match and match.group(1) not in symbols:
-                symbols.append(match.group(1))
-    return symbols
+    print("\nSpecial values: nihaoxiaozhi, hiesp, disabled")
 
 
 def _board_supports_wake_word(
     target: str,
     sdkconfig_append: list[str],
 ) -> bool:
-    """Return whether one board variant satisfies the wake-word Kconfig deps."""
+    """Respect board opt-outs as well as target and PSRAM requirements."""
+    if _sdkconfig_assignments(sdkconfig_append).get("CONFIG_WAKE_WORD_DISABLED") == "y":
+        return False
     if target in _LITE_WAKE_WORD_TARGETS:
         return True
     if target not in _AFE_WAKE_WORD_TARGETS | {"esp32"}:
@@ -347,15 +337,17 @@ def _wake_word_sdkconfig_options(
             if target in _LITE_WAKE_WORD_TARGETS
             else "wn9_nihaoxiaozhi_tts"
         )
+    elif normalized == "hiesp":
+        normalized = "wn9s_hiesp" if target in _LITE_WAKE_WORD_TARGETS else "wn9_hiesp"
 
-    model_symbols = _enabled_default_wake_word_symbols(target)
-    options = [f"{symbol}=n" for symbol in model_symbols]
-    options.extend([
+    # Every build starts from a fresh sdkconfig. Models default to disabled in
+    # ESP-SR; board and target presets must not select a particular model.
+    options = [
         "CONFIG_WAKE_WORD_DISABLED=n",
         "CONFIG_USE_ESP_WAKE_WORD=n",
         "CONFIG_USE_AFE_WAKE_WORD=n",
         "CONFIG_USE_CUSTOM_WAKE_WORD=n",
-    ])
+    ]
 
     if normalized == "disabled":
         options.append("CONFIG_WAKE_WORD_DISABLED=y")
@@ -366,7 +358,7 @@ def _wake_word_sdkconfig_options(
     if not _WAKE_WORD_MODEL_PATTERN.fullmatch(normalized):
         raise ValueError(
             f"Invalid wake word {wake_word!r}. Use 'disabled', "
-            "'nihaoxiaozhi', or an ESP-SR model name such as "
+            "'nihaoxiaozhi', 'hiesp', or an ESP-SR model name such as "
             "'wn9_jarvis_tts'."
         )
     if target in _LITE_WAKE_WORD_TARGETS and not normalized.startswith("wn9s_"):
@@ -1535,8 +1527,8 @@ def build_board(
         config_filename: config.json name (default: config.json)
         name_filter: build["name"] to compile
         create_zip: package merged-binary.bin under releases/ when true
-        language: optional locale such as en-US
-        wake_word: optional ESP-SR model name or "disabled"
+        language: optional locale such as zh-CN; defaults to en-US when omitted
+        wake_word: optional model/alias; otherwise selected from language and board support
         build_options: optional semantic, board-validated option values
     """
     cfg_path = _BOARDS_DIR / Path(board_type) / config_filename
@@ -1610,23 +1602,34 @@ def build_board(
             ([board_type_config], "board selection"),
         ]
         build_option_sdkconfig: list[str] = []
-        selected_language = None
-        selected_wake_word = None
         selected_build_options: Optional[dict[str, object]] = None
-        if language is not None:
-            selected_language, option = _language_sdkconfig_option(language)
-            user_options.append(option)
-            validation_symbols.append(
-                ([option.split("=", 1)[0]], "--language")
+        selected_language, option = _language_sdkconfig_option(
+            _DEFAULT_LANGUAGE if language is None else language
+        )
+        user_options.append(option)
+        validation_symbols.append(
+            ([option.split("=", 1)[0]], "--language")
+        )
+        wake_word_supported = _board_supports_wake_word(target, sdkconfig_append)
+        requested_wake_word = wake_word
+        if requested_wake_word is None:
+            requested_wake_word = "disabled"
+            if wake_word_supported:
+                requested_wake_word = (
+                    "nihaoxiaozhi" if selected_language in {"zh-CN", "zh-TW"} else "hiesp"
+                )
+        (
+            selected_wake_word,
+            wake_word_options,
+            wake_word_symbols,
+        ) = _wake_word_sdkconfig_options(requested_wake_word, target)
+        if selected_wake_word != "disabled" and not wake_word_supported:
+            raise ValueError(
+                f"Wake-word detection is disabled or unsupported for {final_name!r}; "
+                "check the board opt-out and target PSRAM requirements."
             )
-        if wake_word is not None:
-            (
-                selected_wake_word,
-                wake_word_options,
-                wake_word_symbols,
-            ) = _wake_word_sdkconfig_options(wake_word, target)
-            user_options.extend(wake_word_options)
-            validation_symbols.append((wake_word_symbols, "--wake-word"))
+        user_options.extend(wake_word_options)
+        validation_symbols.append((wake_word_symbols, "--wake-word"))
 
         # A build entry may carry semantic defaults to preserve an existing
         # board-specific behavior after it moves out of hardcoded C++.
@@ -1656,10 +1659,8 @@ def build_board(
         print(f"target: {target}")
         if manufacturer:
             print(f"manufacturer: {manufacturer}")
-        if selected_language:
-            print(f"language: {selected_language}")
-        if selected_wake_word:
-            print(f"wake_word: {selected_wake_word}")
+        print(f"language: {selected_language}")
+        print(f"wake_word: {selected_wake_word}")
         if selected_build_options is not None:
             print(
                 "build_options: "
@@ -1769,14 +1770,18 @@ def main(argv: Optional[list[str]] = None) -> None:
     parser.add_argument(
         "--language",
         metavar="LOCALE",
-        help="Firmware language locale, for example zh-CN or en-US",
+        help=(
+            f"Firmware language locale (default: {_DEFAULT_LANGUAGE}), "
+            "for example zh-CN or en-US"
+        ),
     )
     parser.add_argument(
         "--wake-word",
         metavar="MODEL",
         help=(
             "Wake-word model (for example wn9_jarvis_tts), "
-            "'nihaoxiaozhi', or 'disabled'"
+            "'nihaoxiaozhi', 'hiesp', or 'disabled'. Defaults to nihaoxiaozhi "
+            "for zh-CN/zh-TW and hiesp otherwise; disabled on unsupported boards"
         ),
     )
     parser.add_argument(

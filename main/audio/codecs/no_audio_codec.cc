@@ -110,11 +110,11 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #if SOC_I2S_HW_VERSION_2
-                .left_align = true,
-                .big_endian = false,
-                .bit_order_lsb = false
-            #endif
+#if SOC_I2S_HW_VERSION_2
+            .left_align = true,
+            .big_endian = false,
+            .bit_order_lsb = false
+#endif
 
         },
         .gpio_cfg = {
@@ -171,11 +171,11 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #if SOC_I2S_HW_VERSION_2
-                .left_align = true,
-                .big_endian = false,
-                .bit_order_lsb = false
-            #endif
+#if SOC_I2S_HW_VERSION_2
+            .left_align = true,
+            .big_endian = false,
+            .bit_order_lsb = false
+#endif
 
         },
         .gpio_cfg = {
@@ -240,11 +240,11 @@ NoAudioCodecSimplex::NoAudioCodecSimplex(int input_sample_rate, int output_sampl
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #if SOC_I2S_HW_VERSION_2
-                .left_align = true,
-                .big_endian = false,
-                .bit_order_lsb = false
-            #endif
+#if SOC_I2S_HW_VERSION_2
+            .left_align = true,
+            .big_endian = false,
+            .bit_order_lsb = false
+#endif
 
         },
         .gpio_cfg = {
@@ -503,11 +503,11 @@ NoAudioCodecSimplexPdm::NoAudioCodecSimplexPdm(int input_sample_rate, int output
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
             .bit_shift = true,
-            #if SOC_I2S_HW_VERSION_2
-                .left_align = true,
-                .big_endian = false,
-                .bit_order_lsb = false
-            #endif
+#if SOC_I2S_HW_VERSION_2
+            .left_align = true,
+            .big_endian = false,
+            .bit_order_lsb = false
+#endif
 
         },
         .gpio_cfg = {

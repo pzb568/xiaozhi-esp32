@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "selection_date": "2026-10-15",
-  "selection_basis": "Representative chip, network, display and audio build paths across widely used boards. Mirrors the upstream CI list, except the S31 Korvo entry (absent on c6-dev-kit-n16-upstream-sync) is replaced by the branch's primary target.",
+  "selection_date": "2026-09-30",
+  "selection_basis": "Representative chip, network, display and audio build paths across widely used boards.",
   "variants": [
     {
       "board": "waveshare/esp32-c6-dev-kit-n16",
@@ -72,6 +72,11 @@
       "board": "waveshare/esp32-p4-wifi6-touch-lcd",
       "name": "esp32-p4x-wifi6-touch-lcd-7b",
       "reason": "P4 revision v3 and later, MIPI display and device-side AEC"
+    },
+    {
+      "board": "espressif/esp32-s31-korvo-1",
+      "name": "esp32-s31-korvo-1",
+      "reason": "S31, EspVideo and ES8389; requires ESP-IDF 6.1 preview target support"
     },
     {
       "board": "m5stack/atom-echos3r",
