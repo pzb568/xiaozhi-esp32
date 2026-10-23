@@ -42,7 +42,8 @@ UartNecRemote::~UartNecRemote() {
 }
 
 bool UartNecRemote::SendNec(uint8_t user_code1, uint8_t user_code2, uint8_t command) {
-    // YS-IRTM 发射指令：[地址 0xA1][操作 0xF1][用户码高][用户码低][命令码]
+    // YS-IRTM 发射指令：[地址 cmd_addr_][操作 0xF1][user_code1][user_code2][命令码]
+    // user_code1/2 按调用方传入顺序原样发送（字节序语义依模块而定，需真机确认）
     uint8_t packet[5] = {cmd_addr_, 0xF1, user_code1, user_code2, command};
     int written = uart_write_bytes(uart_num_, packet, sizeof(packet));
     if (written != sizeof(packet)) {
@@ -142,6 +143,7 @@ void UartNecRemote::ProcessFrame(const uint8_t* data, size_t len) {
     }
 
     // 格式 B：YS-IRTM 3 字节输出 [用户码1][用户码2][命令码]
+    // 解析为 address = (用户码1 << 8) | 用户码2（与 SendNec 调用方的低字节在前约定不同，需真机确认）
     // 帧长为 3 的倍数时取最后一组（连续按键会输出多组）
     if (len >= 3 && len % 3 == 0) {
         size_t i = len - 3;

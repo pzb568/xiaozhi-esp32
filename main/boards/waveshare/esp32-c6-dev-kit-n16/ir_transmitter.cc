@@ -167,10 +167,16 @@ class PulseBuilder {
 public:
     uint32_t* buf_;
     size_t count_ = 0;   // 脉冲对数量
+    bool overflow_ = false;
+    static constexpr size_t kCapacity = 160;  // 必须与 IrTransmitter::kMaxPairs 一致
 
     explicit PulseBuilder(uint32_t* buf) : buf_(buf) {}
 
     void P(uint32_t on, uint32_t off) {
+        if (count_ >= kCapacity) {
+            overflow_ = true;
+            return;
+        }
         buf_[count_ * 2] = on;
         buf_[count_ * 2 + 1] = off;
         count_++;
@@ -245,6 +251,10 @@ bool IrTransmitter::SendGree(bool power_on, AcMode mode, int temp, int fan) {
     }
     pb.P(kGreeBitMark, kGreeMsgSpace);     // 帧尾
 
+    if (pb.overflow_) {
+        ESP_LOGE(TAG, "pulse buffer overflow");
+        return false;
+    }
     return SendPulseTrain(pb.buf_, pb.count_);
 }
 
@@ -285,6 +295,10 @@ bool IrTransmitter::SendMidea(bool power_on, AcMode mode, int temp, int fan) {
         pb.P(kMideaBitMark, kMideaMinGap);
     }
 
+    if (pb.overflow_) {
+        ESP_LOGE(TAG, "pulse buffer overflow");
+        return false;
+    }
     return SendPulseTrain(pb.buf_, pb.count_);
 }
 
@@ -326,6 +340,10 @@ bool IrTransmitter::SendHaier(bool power_on, AcMode mode, int temp, int fan) {
     }
     pb.P(kHaierBitMark, 150000);              // 帧尾（超长 off 由驱动截断）
 
+    if (pb.overflow_) {
+        ESP_LOGE(TAG, "pulse buffer overflow");
+        return false;
+    }
     return SendPulseTrain(pb.buf_, pb.count_);
 }
 
@@ -339,6 +357,10 @@ bool IrTransmitter::SendNec(uint16_t address, uint8_t command) {
     pb.ByteLsb((uint8_t)~command, kNecBitMark, kNecOneSpace, kNecZeroSpace);
     pb.P(kNecBitMark, 0);   // 帧结束位
 
+    if (pb.overflow_) {
+        ESP_LOGE(TAG, "pulse buffer overflow");
+        return false;
+    }
     return SendPulseTrain(pb.buf_, pb.count_);
 }
 
