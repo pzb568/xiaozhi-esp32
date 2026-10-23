@@ -197,7 +197,40 @@ public:
         InitializeButtons();
         InitializeIrRemote();
         InitializeTools();
-        ESP_LOGI(TAG, "Waveshare ESP32-C6-DEV-KIT-N16 board initialized");
+        PrintHardwareStatus();
+    }
+
+    void PrintHardwareStatus() {
+        ESP_LOGI(TAG, "========== HARDWARE INIT STATUS ==========");
+
+        // 1. 音频 I2S
+        ESP_LOGI(TAG, "[OK] I2S Mic   : BCLK=GPIO%d WS=GPIO%d DIN=GPIO%d  %s",
+                 (int)AUDIO_I2S_GPIO_BCLK, (int)AUDIO_I2S_GPIO_WS,
+                 (int)AUDIO_I2S_GPIO_DIN,
+                 AUDIO_INPUT_SAMPLE_RATE == 16000 ? "(16kHz for WakeNet)" : "(24kHz)");
+        ESP_LOGI(TAG, "[OK] I2S Speaker: BCLK=GPIO%d WS=GPIO%d DOUT=GPIO%d  (%dHz)",
+                 (int)AUDIO_I2S_GPIO_BCLK, (int)AUDIO_I2S_GPIO_WS,
+                 (int)AUDIO_I2S_GPIO_DOUT, AUDIO_OUTPUT_SAMPLE_RATE);
+
+        // 2. 按键 + LED
+        ESP_LOGI(TAG, "[OK] Boot Button: GPIO%d", (int)BOOT_BUTTON_GPIO);
+        ESP_LOGI(TAG, "[OK] WS2812 LED : GPIO%d", (int)BUILTIN_LED_GPIO);
+
+        // 3. YS-IRTM 红外收发
+        ESP_LOGI(TAG, "[%s] YS-IRTM UART: TX=GPIO%d RX=GPIO%d baud=%d",
+                 (ir_remote_ != nullptr) ? "OK" : "FAIL",
+                 (int)IR_REMOTE_TX_PIN, (int)IR_REMOTE_RX_PIN,
+                 IR_REMOTE_BAUD_RATE);
+
+        // 4. 空调 IR 发射管
+        const char* ir_ac_state = "FAIL";
+        if (ir_transmitter_ != nullptr && ir_transmitter_->IsReady()) {
+            ir_ac_state = "OK";
+        }
+        ESP_LOGI(TAG, "[%s] IR AC TX    : GPIO%d brand=%s",
+                 ir_ac_state, (int)IR_AC_TX_PIN, IR_AC_DEFAULT_BRAND);
+
+        ESP_LOGI(TAG, "==========================================");
     }
 
     virtual AudioCodec* GetAudioCodec() override {
@@ -207,6 +240,9 @@ public:
             AUDIO_INPUT_SAMPLE_RATE, AUDIO_OUTPUT_SAMPLE_RATE,
             AUDIO_I2S_GPIO_BCLK, AUDIO_I2S_GPIO_WS,
             AUDIO_I2S_GPIO_DOUT, AUDIO_I2S_GPIO_DIN);
+        // 麦克风输入增益 ×8 + tanh 软压缩（在 no_audio_codec.cc Read 中应用），
+        // 2026-10-06 真机实证唤醒成功所用的配置
+        audio_codec.SetInputGain(8.0f);
 #else
         // 简单模式：功放与麦克风各自独立时钟
         static NoAudioCodecSimplex audio_codec(

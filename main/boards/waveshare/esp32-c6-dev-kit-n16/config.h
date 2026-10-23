@@ -16,11 +16,15 @@
  * 注释掉下面的 AUDIO_I2S_METHOD_SIMPLEX_DUPLEX 宏即可（见 README）。
  */
 
+// ESP32-C6 只有一个 I2S 控制器（I2S_NUM_0），无法使用 Simplex（需要两个端口：
+// 功放 port0 + 麦克风 port1）——实测直接崩溃 "invalid I2S port id"。
+// 因此本板必须用 Duplex 全双工共用 BCLK/WS（上游无独立 codec 芯片板的标准方案）。
+// 采样率 24000：INMP441 SCK 下限 0.5MHz，16kHz 时 f_SCK=512kHz 太接近临界。
 #define AUDIO_INPUT_SAMPLE_RATE  24000
 #define AUDIO_OUTPUT_SAMPLE_RATE 24000
 
-// 选择接线模式：默认 Duplex（共用时钟，接线最简）
-// 如需 Simplex（功放/麦克风各用一组 BCLK/WS），注释掉下面这行
+// 选择接线模式：Duplex（共用 BCLK/WS，接线最简）
+// ESP32-C6 只有 1 个 I2S 控制器，Simplex 不可用（会崩溃），必须 Duplex。
 #define AUDIO_I2S_METHOD_DUPLEX
 
 #ifdef AUDIO_I2S_METHOD_DUPLEX

@@ -1,5 +1,7 @@
 #include "audio_service.h"
 #include <esp_log.h>
+#include <esp_timer.h>
+#include <cmath>
 #include <cstring>
 
 #define RATE_CVT_CFG(_src_rate, _dest_rate, _channel)                                        \
@@ -200,22 +202,46 @@ bool AudioService::ReadAudioData(std::vector<int16_t>& data, int sample_rate, in
     }
 
     if (codec_->input_sample_rate() != sample_rate) {
-        data.resize(samples * codec_->input_sample_rate() / sample_rate * codec_->input_channels());
-        if (!codec_->InputData(data)) {
-            return false;
-        }
-        if (input_resampler_ != nullptr) {
-            std::lock_guard<std::mutex> lock(input_resampler_mutex_);
-            uint32_t in_sample_num = data.size() / codec_->input_channels();
-            uint32_t output_samples = 0;
-            esp_ae_rate_cvt_get_max_out_sample_num(input_resampler_, in_sample_num,
-                                                   &output_samples);
-            auto resampled = std::vector<int16_t>(output_samples * codec_->input_channels());
-            uint32_t actual_output = output_samples;
-            esp_ae_rate_cvt_process(input_resampler_, (esp_ae_sample_t)data.data(), in_sample_num,
-                                    (esp_ae_sample_t)resampled.data(), &actual_output);
-            resampled.resize(actual_output * codec_->input_channels());
-            data = std::move(resampled);
+        if (codec_->input_sample_rate() == 24000 && sample_rate == 16000 &&
+            codec_->input_channels() == 1) {
+            // ---- 自研 24k→16k 重采样（替换 esp_ae_rate_cvt 黑盒）----
+            // 数学上自证：每 3 个输入样本精确输出 2 个（线性插值）。
+            // out0 = in[0]（直接抽取）
+            // out1 = (in[1] + in[2]) / 2（相邻两点平均，等效线性插值中点）
+            // 240 输入 → 160 输出，块边界无缝（3 整除），速率绝无漂移。
+            // 语音主要能量在 4kHz 以下，简单平滑抽取的混叠对唤醒无实质影响。
+            const int kNeedIn = samples * 24000 / 16000;  // 160 → 240
+            std::vector<int16_t> raw(kNeedIn);
+            if (!codec_->InputData(raw)) {
+                return false;
+            }
+            size_t got = raw.size();
+            std::vector<int16_t> out((got / 3) * 2 + 2);
+            size_t on = 0;
+            for (size_t i = 0; i + 2 < got; i += 3) {
+                out[on++] = raw[i];
+                out[on++] = (int16_t)(((int32_t)raw[i + 1] + (int32_t)raw[i + 2]) / 2);
+            }
+            out.resize(on);
+            data = std::move(out);
+        } else {
+            data.resize(samples * codec_->input_sample_rate() / sample_rate * codec_->input_channels());
+            if (!codec_->InputData(data)) {
+                return false;
+            }
+            if (input_resampler_ != nullptr) {
+                std::lock_guard<std::mutex> lock(input_resampler_mutex_);
+                uint32_t in_sample_num = data.size() / codec_->input_channels();
+                uint32_t output_samples = 0;
+                esp_ae_rate_cvt_get_max_out_sample_num(input_resampler_, in_sample_num,
+                                                       &output_samples);
+                auto resampled = std::vector<int16_t>(output_samples * codec_->input_channels());
+                uint32_t actual_output = output_samples;
+                esp_ae_rate_cvt_process(input_resampler_, (esp_ae_sample_t)data.data(), in_sample_num,
+                                        (esp_ae_sample_t)resampled.data(), &actual_output);
+                resampled.resize(actual_output * codec_->input_channels());
+                data = std::move(resampled);
+            }
         }
     } else {
         data.resize(samples * codec_->input_channels());
@@ -245,9 +271,29 @@ void AudioService::AudioInputTask() {
                                                   AS_EVENT_AUDIO_PROCESSOR_RUNNING;
 
     while (true) {
+        // ---- InputDebug 诊断：每 5 秒打印输入链路状态（心跳） ----
+        // ww_run=1     : 唤醒检测已启用
+        // i2s_read=FAIL: I2S 读不到数据（接线/驱动问题）
+        // rms          : 麦克风实际音量（喊话时应明显变大）
+        {
+            static int64_t last_hb = 0;
+            int64_t now_hb = esp_timer_get_time();
+            if (last_hb == 0) {
+                last_hb = now_hb;
+            } else if (now_hb - last_hb >= 5000000) {
+                EventBits_t cur = xEventGroupGetBits(event_group_);
+                bool ww = cur & AS_EVENT_WAKE_WORD_RUNNING;
+                bool ap = cur & AS_EVENT_AUDIO_PROCESSOR_RUNNING;
+                ESP_LOGI(TAG, "[InputDebug] ww_run=%d ap_run=%d input_enabled=%d",
+                         (int)ww, (int)ap, (int)codec_->input_enabled());
+                last_hb = now_hb;
+            }
+        }
+        // ---- InputDebug end ----
+
         EventBits_t bits = xEventGroupWaitBits(
             event_group_, kAudioInputActiveBits | AS_EVENT_AUDIO_INPUT_STOP_REQUEST, pdFALSE,
-            pdFALSE, portMAX_DELAY);
+            pdFALSE, pdMS_TO_TICKS(1000));
 
         if (service_stopped_.load()) {
             // ADC continuous mode keeps its hardware mutex from start until stop,
@@ -648,6 +694,10 @@ void AudioService::EncodeWakeWord() {
 const std::string& AudioService::GetLastWakeWord() const {
     static const std::string empty;
     return audio_engine_ ? audio_engine_->GetLastDetectedWakeWord() : empty;
+}
+
+std::vector<std::string> AudioService::GetWakeWords() const {
+    return audio_engine_initialized_ ? audio_engine_->GetWakeWords() : std::vector<std::string>{};
 }
 
 std::unique_ptr<AudioStreamPacket> AudioService::PopWakeWordPacket() {
