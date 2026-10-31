@@ -3,6 +3,7 @@
 #include "assets/lang_config.h"
 #include "audio_codec.h"
 #include "board.h"
+#include "cjson_utils.h"
 #include "display.h"
 #include "mcp_server.h"
 #include "mqtt_protocol.h"
@@ -15,8 +16,17 @@
 #include <esp_log.h>
 #include <arpa/inet.h>
 #include <cJSON.h>
+#include <algorithm>
 #include <cstring>
 #include <limits>
+
+// WakeNet has no AEC: only enable it during playback on boards that need it
+// (the C6 dev kit has no AFE wake word), otherwise keep upstream behaviour.
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16
+#define WAKE_WORD_DURING_PLAYBACK() true
+#else
+#define WAKE_WORD_DURING_PLAYBACK() audio_service_.IsAfeWakeWord()
+#endif
 
 #define TAG "Application"
 
@@ -51,6 +61,10 @@ Application::~Application() {
     if (clock_timer_handle_ != nullptr) {
         esp_timer_stop(clock_timer_handle_);
         esp_timer_delete(clock_timer_handle_);
+    }
+    if (startup_wake_word_hint_timer_ != nullptr) {
+        esp_timer_stop(startup_wake_word_hint_timer_);
+        esp_timer_delete(startup_wake_word_hint_timer_);
     }
     vEventGroupDelete(event_group_);
 }
@@ -104,6 +118,11 @@ void Application::Initialize() {
     auto& mcp_server = McpServer::GetInstance();
     mcp_server.AddCommonTools();
     mcp_server.AddUserOnlyTools();
+    // Registration is complete here, so this is the only place the whole inventory exists.
+    // It is logged because a server that accepts a bounded number of tools drops the rest
+    // quietly: the only sign on this device was an alert at boot and a sad face, which is
+    // easy to see and hard to connect to a tool list.
+    mcp_server.LogToolInventory();
 
     // Set network event callback for UI updates and network state handling
     board.SetNetworkEventCallback([this](NetworkEvent event, const std::string& data) {
@@ -181,7 +200,7 @@ void Application::Run() {
         MAIN_EVENT_VAD_CHANGE | MAIN_EVENT_CLOCK_TICK | MAIN_EVENT_ERROR |
         MAIN_EVENT_NETWORK_CONNECTED | MAIN_EVENT_NETWORK_DISCONNECTED | MAIN_EVENT_TOGGLE_CHAT |
         MAIN_EVENT_START_LISTENING | MAIN_EVENT_STOP_LISTENING | MAIN_EVENT_ACTIVATION_DONE |
-        MAIN_EVENT_STATE_CHANGED | MAIN_EVENT_PLAYBACK_DRAINED;
+        MAIN_EVENT_STATE_CHANGED | MAIN_EVENT_PLAYBACK_DRAINED | MAIN_EVENT_STARTUP_HINT_TIMEOUT;
 
     while (true) {
         auto bits = xEventGroupWaitBits(event_group_, ALL_EVENTS, pdTRUE, pdFALSE, portMAX_DELAY);
@@ -282,6 +301,10 @@ void Application::Run() {
                 // SystemInfo::PrintTaskCpuUsage(pdMS_TO_TICKS(1000));
             }
         }
+        if (bits & MAIN_EVENT_STARTUP_HINT_TIMEOUT) {
+            HideStartupWakeWordHint();
+        }
+        ShowStartupWakeWordHint();
     }
 }
 
@@ -341,6 +364,10 @@ void Application::HandleActivationDoneEvent() {
     // that alert with the "ready" UI/sound — the main loop can process both
     // events back-to-back because the activation task is lower priority.
     const bool has_error = !last_error_message_.empty();
+    if (!startup_completed_) {
+        startup_completed_ = true;
+        pending_startup_wake_word_hint_ = !has_error;
+    }
     if (!has_error) {
         auto display = Board::GetInstance().GetDisplay();
         std::string message = std::string(Lang::Strings::VERSION) + ota_->GetCurrentVersion();
@@ -435,7 +462,14 @@ void Application::CheckAssetsVersion() {
     // Apply assets
     assets.Apply();
     display->SetChatMessage("system", "");
-    display->SetEmotion("robot_2");
+    // "robot_2" is declared only by a board shipping its own pack: esp-vocat maps it to
+    // neutral.eaf, and the rgb-matrix display special-cases the string. None of the shared
+    // esp_emote_assets packs (320_240, 360_360, 1024_600) declares it, so on every board that
+    // uses one this call fails, logs two errors and leaves whatever face was already up.
+    // Fall back to an emotion all three packs do declare.
+    if (!display->SetEmotion("robot_2")) {
+        display->SetEmotion("neutral");
+    }
 }
 
 void Application::CheckNewVersion() {
@@ -702,12 +736,16 @@ void Application::InitializeProtocol() {
 #if CONFIG_RECEIVE_CUSTOM_MESSAGE
         } else if (strcmp(type->valuestring, "custom") == 0) {
             auto payload = cJSON_GetObjectItem(root, "payload");
-            ESP_LOGI(TAG, "Received custom message: %s", cJSON_PrintUnformatted(root));
+            CJsonStringUniquePtr root_json(cJSON_PrintUnformatted(root));
+            ESP_LOGI(TAG, "Received custom message: %s", root_json ? root_json.get() : "");
             if (cJSON_IsObject(payload)) {
-                Schedule(
-                    [this, display, payload_str = std::string(cJSON_PrintUnformatted(payload))]() {
-                        display->SetChatMessage("system", payload_str.c_str());
-                    });
+                CJsonStringUniquePtr payload_json(cJSON_PrintUnformatted(payload));
+                if (payload_json) {
+                    Schedule(
+                        [this, display, payload_str = std::string(payload_json.get())]() {
+                            display->SetChatMessage("system", payload_str.c_str());
+                        });
+                }
             } else {
                 ESP_LOGW(TAG, "Invalid custom message format: missing payload");
             }
@@ -914,7 +952,7 @@ void Application::HandleWakeWordDetectedEvent() {
             audio_service_.ResetDecoder();
             audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
             // Re-enable wake word detection as it was stopped by the detection itself
-            audio_service_.EnableWakeWordDetection(true);
+            audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
         } else {
             // Play popup sound and start listening again
             play_popup_on_listening_ = true;
@@ -936,7 +974,7 @@ void Application::BeginWakeWordInvoke(const std::string& wake_word) {
     if (!SetDeviceState(kDeviceStateConnecting)) {
         // Wake word detection was stopped by the detection itself; restore it
         // so the device does not become unresponsive to wake words.
-        audio_service_.EnableWakeWordDetection(true);
+        audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
         return;
     }
 
@@ -1012,7 +1050,7 @@ void Application::HandleStateChangedEvent() {
                     "neutral");  // Then set emotion (wechat mode checks child count)
             }
             audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(true);
+            audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
@@ -1044,14 +1082,14 @@ void Application::HandleStateChangedEvent() {
             if (listening_mode_ != kListeningModeRealtime) {
                 audio_service_.EnableVoiceProcessing(false);
                 // Only AFE wake word can be detected in speaking mode
-                audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+                audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
             }
             audio_service_.ResetDecoder();
             break;
         case kDeviceStateNotifying:
             display->SetStatus(Lang::Strings::SPEAKING);
             audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+            audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
             break;
         case kDeviceStateWifiConfiguring:
             audio_service_.EnableVoiceProcessing(false);
@@ -1061,6 +1099,74 @@ void Application::HandleStateChangedEvent() {
             // Do nothing
             break;
     }
+}
+
+void Application::ShowStartupWakeWordHint() {
+    // A coalesced activation/state event can queue another idle UI cleanup.
+    // Wait for it before adding the hint, or ClearChatMessages() would erase it.
+    if (!pending_startup_wake_word_hint_ ||
+        (xEventGroupGetBits(event_group_) & MAIN_EVENT_STATE_CHANGED)) {
+        return;
+    }
+    pending_startup_wake_word_hint_ = false;
+    const auto state = GetDeviceState();
+    const bool wake_word_running = audio_service_.IsWakeWordRunning();
+    if (state != kDeviceStateIdle || !last_error_message_.empty() || !wake_word_running) {
+        ESP_LOGI(TAG, "Startup wake word hint skipped (state=%d, wake word running=%d, error=%d)",
+                 static_cast<int>(state), wake_word_running, !last_error_message_.empty());
+        return;
+    }
+
+    const auto wake_words = audio_service_.GetWakeWords();
+    std::string words;
+    for (auto it = wake_words.begin(); it != wake_words.end(); ++it) {
+        if (it->empty() || std::find(wake_words.begin(), it, *it) != it) {
+            continue;
+        }
+        if (!words.empty()) {
+            words += " / ";
+        }
+        words += *it;
+    }
+    if (words.empty()) {
+        ESP_LOGW(TAG, "Startup wake word hint skipped: no available wake words");
+        return;
+    }
+    std::string message = Lang::Strings::WAKE_WORD_HINT;
+    const auto placeholder = message.find("%s");
+    if (placeholder == std::string::npos) {
+        ESP_LOGE(TAG, "Startup wake word hint skipped: invalid message template");
+        return;
+    }
+    message.replace(placeholder, 2, words);
+    if (startup_wake_word_hint_timer_ == nullptr) {
+        esp_timer_create_args_t timer_args = {
+            .callback =
+                [](void* arg) {
+                    auto app = static_cast<Application*>(arg);
+                    xEventGroupSetBits(app->event_group_, MAIN_EVENT_STARTUP_HINT_TIMEOUT);
+                },
+            .arg = this,
+            .dispatch_method = ESP_TIMER_TASK,
+            .name = "startup_hint",
+            .skip_unhandled_events = false,
+        };
+        ESP_ERROR_CHECK(esp_timer_create(&timer_args, &startup_wake_word_hint_timer_));
+    }
+    ESP_LOGI(TAG, "Startup wake word hint: %s", message.c_str());
+    Board::GetInstance().GetDisplay()->SetChatMessage("assistant", message.c_str());
+    startup_wake_word_hint_message_ = std::move(message);
+    ESP_ERROR_CHECK(esp_timer_start_once(startup_wake_word_hint_timer_, 5000 * 1000));
+}
+
+void Application::HideStartupWakeWordHint() {
+    if (startup_wake_word_hint_message_.empty()) {
+        return;
+    }
+    // A conversation or alert may have replaced the hint while its timer was running.
+    Board::GetInstance().GetDisplay()->RemoveChatMessage("assistant",
+                                                         startup_wake_word_hint_message_.c_str());
+    startup_wake_word_hint_message_.clear();
 }
 
 void Application::StartListeningAudio() {
@@ -1086,7 +1192,7 @@ void Application::StartListeningAudio() {
 void Application::ConfigureWakeWordForListening() {
 #ifdef CONFIG_WAKE_WORD_DETECTION_IN_LISTENING
     // Enable wake word detection in listening mode (configured via Kconfig)
-    audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+    audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
 #else
     // Disable wake word detection in listening mode
     audio_service_.EnableWakeWordDetection(false);
@@ -1102,7 +1208,7 @@ void Application::StartNotification(std::string audio_url, std::vector<NotifySub
     auto& board = Board::GetInstance();
     board.SetPowerSaveLevel(PowerSaveLevel::PERFORMANCE);
     audio_service_.EnableVoiceProcessing(false);
-    audio_service_.EnableWakeWordDetection(audio_service_.IsAfeWakeWord());
+    audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
     audio_service_.ReleaseWakeWordResources();
     while (audio_service_.PopPacketFromSendQueue()) {
         // Discard microphone audio left over from a previous conversation.

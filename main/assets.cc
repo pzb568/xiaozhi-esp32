@@ -51,11 +51,22 @@ bool Assets::FindPartition(Assets* assets) {
 }
 
 bool Assets::Apply(bool refresh_display_theme) {
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16
+    (void)refresh_display_theme;
+    ESP_LOGW("Assets", "Assets disabled: Apply() short-circuited");
+    return false;
+#else
     return strategy_ ? strategy_->Apply(this, refresh_display_theme) : false;
+#endif
 }
 
 bool Assets::InitializePartition() {
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16
+    ESP_LOGW("Assets", "Assets disabled: InitializePartition() short-circuited");
+    return false;
+#else
     return strategy_ ? strategy_->InitializePartition(this) : false;
+#endif
 }
 
 void Assets::UnApplyPartition() {
@@ -239,6 +250,9 @@ void Assets::LvglStrategy::UnApplyPartition(Assets* assets) {
 
 bool Assets::LvglStrategy::GetAssetData(Assets* assets, const std::string& name, void*& ptr,
                                         size_t& size) {
+    if (!checksum_valid_ || mmap_root_ == nullptr) {
+        return false;
+    }
     auto asset = assets_.find(name);
     if (asset == assets_.end()) {
         return false;
@@ -280,6 +294,15 @@ bool Assets::LvglStrategy::Apply(Assets* assets, bool refresh_display_theme) {
 
     Assets::LoadSrmodelsFromIndex(assets, root.get());
 
+    // A missing or failed panel can leave a NoDisplay without initializing LVGL.
+    // Keep speech models available, but do not allocate unused or unsafe UI resources.
+    auto display = Board::GetInstance().GetDisplay();
+    if (display == nullptr || !display->SupportsGuiOperations() || !lv_is_initialized()) {
+        assets->DisableTextFontGlyphPush();
+        ESP_LOGI(TAG, "Skipping UI assets: LVGL display is unavailable");
+        return true;
+    }
+
     auto& theme_manager = LvglThemeManager::GetInstance();
     auto light_theme = theme_manager.GetTheme("light");
     auto dark_theme = theme_manager.GetTheme("dark");
@@ -289,9 +312,7 @@ bool Assets::LvglStrategy::Apply(Assets* assets, bool refresh_display_theme) {
         std::string fonts_text_file = font->valuestring;
         if (assets->GetAssetData(fonts_text_file, ptr, size)) {
             auto text_font = std::make_shared<LvglCBinFont>(ptr);
-            auto display = Board::GetInstance().GetDisplay();
-            if (text_font->font() == nullptr || display == nullptr ||
-                !display->SetTextFont(text_font)) {
+            if (text_font->font() == nullptr || !display->SetTextFont(text_font)) {
                 ESP_LOGW(TAG, "Ignoring invalid text font asset %s", fonts_text_file.c_str());
             } else {
                 assets->DisableTextFontGlyphPush();
@@ -355,7 +376,7 @@ bool Assets::LvglStrategy::Apply(Assets* assets, bool refresh_display_theme) {
         if (dark_theme != nullptr) {
             dark_theme->set_emoji_collection(custom_emoji_collection);
         }
-        Board::GetInstance().GetDisplay()->SetEmojiCollection(custom_emoji_collection);
+        display->SetEmojiCollection(custom_emoji_collection);
     }
 
     cJSON* skin = cJSON_GetObjectItem(root.get(), "skin");
@@ -411,7 +432,6 @@ bool Assets::LvglStrategy::Apply(Assets* assets, bool refresh_display_theme) {
     }
 
     if (refresh_display_theme) {
-        auto display = Board::GetInstance().GetDisplay();
         ESP_LOGI(TAG, "Refreshing display theme...");
 
         auto current_theme = display->GetTheme();

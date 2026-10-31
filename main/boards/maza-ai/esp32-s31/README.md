@@ -2,7 +2,7 @@
 
 ## 产品介绍
 
-[Maza AI 开发板](https://maza.azurewebsites.net/#board) 集成了语音交互与墨水屏驱动能力，提供墨水屏转接接口。最新基于S31的开发板拥有更快的处理能力和更多的IO接口，还提供了并口墨水屏转接接口。一块板子玩转几乎所有墨水屏，让AI与墨水屏碰撞出有趣的新玩法。
+[Maza AI 开发板](https://maza-ai.com/#board) 集成了语音交互与墨水屏驱动能力，提供墨水屏转接接口。最新基于S31的开发板拥有更快的处理能力和更多的IO接口，还提供了并口墨水屏转接接口。一块板子玩转几乎所有墨水屏，让AI与墨水屏碰撞出有趣的新玩法。
 
 本目录适配 **Maza AI ESP32-S31**，默认使用 A01 2.9 英寸墨水屏，分辨率为 128 × 296。
 
@@ -30,7 +30,7 @@
 
 ### 准备环境
 
-请先安装并激活 ESP-IDF v6.1 环境，然后克隆本项目：
+请先安装并激活 ESP-IDF `release/v6.1` 分支环境，然后克隆本项目：
 
 ```bash
 git clone https://github.com/78/xiaozhi-esp32.git
@@ -45,7 +45,7 @@ cd xiaozhi-esp32
 idf.py --preview set-target esp32s31
 ```
 
-> **注意:** 需要用最新的ESP IDF 6.1才能支持ESP32S31。
+> **注意:** 需要使用 ESP-IDF `release/v6.1` 分支以支持 ESP32-S31。
 
 打开配置菜单：
 
