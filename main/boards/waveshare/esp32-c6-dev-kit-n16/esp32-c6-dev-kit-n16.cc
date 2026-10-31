@@ -168,7 +168,7 @@ private:
         mcp_server.AddTool(
             "self.ir_send_nec",
             "Send a NEC infrared code to control TV/set-top-box/fan etc. "
-            "address: 16-bit NEC user code (low byte first), e.g. 0x00FF = 255; "
+            "address: 16-bit NEC user code as shown on the remote (first transmitted byte is the high byte), e.g. 0x00FF = 255; "
             "command: 8-bit command code (0-255). "
             "Lookup the device's NEC code table for the specific command.",
             PropertyList({
@@ -181,9 +181,9 @@ private:
                 }
                 int address = properties["address"].value<int>();
                 int command = properties["command"].value<int>();
-                // 低字节在前（NEC 发送顺序）
-                uint8_t u1 = address & 0xFF;
-                uint8_t u2 = (address >> 8) & 0xFF;
+                // 高字节在前：0x00FF 按线上顺序发出 00 FF（与接收侧解析一致）
+                uint8_t u1 = (address >> 8) & 0xFF;
+                uint8_t u2 = address & 0xFF;
                 if (ir_remote_->SendNec(u1, u2, (uint8_t)command)) {
                     return true;
                 }

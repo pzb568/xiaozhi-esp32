@@ -40,6 +40,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
     input_sample_rate_ = input_sample_rate;
     output_sample_rate_ = output_sample_rate;
 
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16
     // ---- 引脚自检：I2S 初始化前，用内部上拉/下拉回读 4 根信号线 ----
     // 上拉读 1 + 下拉读 0 = 引脚悬空可驱动（正常）；
     // 两读皆 0 = 被外部死钳到 GND（对地短路/焊连）；两读皆 1 = 被钳到 VCC。
@@ -79,6 +80,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
     // 内部抽取滤波器失配，大量高频量化噪声泄漏（实测 zcr 0.34、dc 漂移），
     // 16kHz 时（过采样率 16）甚至完全失效输出静音。
     stereo_slots_ = true;
+#endif
 
     i2s_chan_config_t chan_cfg = {
         .id = XIAOZHI_I2S_PORT(0),

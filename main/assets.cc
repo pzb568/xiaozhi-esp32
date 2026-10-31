@@ -51,14 +51,22 @@ bool Assets::FindPartition(Assets* assets) {
 }
 
 bool Assets::Apply(bool refresh_display_theme) {
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16
     (void)refresh_display_theme;
     ESP_LOGW("Assets", "Assets disabled: Apply() short-circuited");
     return false;
+#else
+    return strategy_ ? strategy_->Apply(this, refresh_display_theme) : false;
+#endif
 }
 
 bool Assets::InitializePartition() {
+#ifdef CONFIG_BOARD_TYPE_WAVESHARE_ESP32_C6_DEV_KIT_N16
     ESP_LOGW("Assets", "Assets disabled: InitializePartition() short-circuited");
     return false;
+#else
+    return strategy_ ? strategy_->InitializePartition(this) : false;
+#endif
 }
 
 void Assets::UnApplyPartition() {

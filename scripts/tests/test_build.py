@@ -284,7 +284,7 @@ class VersionTests(unittest.TestCase):
             "esp32": '"partitions/v2/4m.csv"',
             "esp32c3": '"partitions/v2/16m_c3.csv"',
             "esp32c5": '"partitions/v2/16m.csv"',
-            "esp32c6": '"partitions/v2/16m_c6.csv"',
+            "esp32c6": '"partitions/v2/16m_c3.csv"',
             "esp32p4": '"partitions/v2/16m.csv"',
             "esp32s3": '"partitions/v2/16m.csv"',
             "esp32s31": '"partitions/v2/16m.csv"',
