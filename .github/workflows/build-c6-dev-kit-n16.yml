@@ -27,6 +27,7 @@ jobs:
           python scripts/build.py \
             waveshare/esp32-c6-dev-kit-n16 \
             --name esp32-c6-dev-kit-n16 \
+            --language zh-CN \
             --wake-word nihaoxiaozhi
 
       - name: Show partition table
