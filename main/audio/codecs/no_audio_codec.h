@@ -17,6 +17,8 @@ protected:
     // 启动初期打印两路统计用于诊断；仅当 slot0 近乎无声时才回退 slot1。
     bool slot_locked_ = false;
     int stereo_slot_index_ = 0;
+    // 启用输入后需丢弃的帧数（INMP441 启动瞬态）
+    int rx_warmup_frames_ = 0;
 
     virtual int Write(const int16_t* data, int samples) override;
     virtual int Read(int16_t* dest, int samples) override;

@@ -328,7 +328,24 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
         if (i2s_channel_read(rx_handle_, bit32_buffer.data(), samples * 2 * sizeof(int32_t), &bytes_read, kReadTimeoutMs) != ESP_OK) {
             return 0;
         }
+        // 读到奇数个 32 位字会让左右 slot 永久错位：补读 1 个字凑成完整帧。
+        if (bytes_read % (2 * sizeof(int32_t)) != 0 && bytes_read < samples * 2 * sizeof(int32_t)) {
+            size_t extra = 0;
+            i2s_channel_read(rx_handle_, (uint8_t*)bit32_buffer.data() + bytes_read,
+                             sizeof(int32_t), &extra, 20);
+            bytes_read += extra;
+            ESP_LOGW(TAG, "[I2S] odd word count, realigned (extra=%u)", (unsigned)extra);
+        }
         int frames = bytes_read / (2 * sizeof(int32_t));
+
+        // 启用输入后的头 ~2 秒是饱和直流瞬态（RMS≈30000, dc≈25000）：
+        // 丢弃，不参与 slot 统计，也不送入唤醒引擎。
+        if (rx_warmup_frames_ > 0) {
+            int n = frames < rx_warmup_frames_ ? frames : rx_warmup_frames_;
+            rx_warmup_frames_ -= n;
+            memset(dest, 0, frames * sizeof(int16_t));
+            return frames;
+        }
 
         // ---- slot 选择 ----
         // 实测结论（2026-10）：INMP441 数据在**偶数索引 slot**（slot0）。
@@ -447,6 +464,7 @@ void NoAudioCodec::EnableInput(bool enable) {
     }
     if (enable) {
         ESP_ERROR_CHECK(i2s_channel_enable(rx_handle_));
+        rx_warmup_frames_ = stereo_slots_ ? 2 * input_sample_rate_ : 0;
     } else {
         ESP_ERROR_CHECK(i2s_channel_disable(rx_handle_));
     }
