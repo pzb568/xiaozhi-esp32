@@ -952,7 +952,7 @@ void Application::HandleWakeWordDetectedEvent() {
             audio_service_.ResetDecoder();
             audio_service_.PlaySound(Lang::Sounds::OGG_POPUP);
             // Re-enable wake word detection as it was stopped by the detection itself
-            audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
+            audio_service_.EnableWakeWordDetection(true);
         } else {
             // Play popup sound and start listening again
             play_popup_on_listening_ = true;
@@ -974,7 +974,7 @@ void Application::BeginWakeWordInvoke(const std::string& wake_word) {
     if (!SetDeviceState(kDeviceStateConnecting)) {
         // Wake word detection was stopped by the detection itself; restore it
         // so the device does not become unresponsive to wake words.
-        audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
+        audio_service_.EnableWakeWordDetection(true);
         return;
     }
 
@@ -1050,7 +1050,7 @@ void Application::HandleStateChangedEvent() {
                     "neutral");  // Then set emotion (wechat mode checks child count)
             }
             audio_service_.EnableVoiceProcessing(false);
-            audio_service_.EnableWakeWordDetection(WAKE_WORD_DURING_PLAYBACK());
+            audio_service_.EnableWakeWordDetection(true);
             break;
         case kDeviceStateConnecting:
             display->SetStatus(Lang::Strings::CONNECTING);
