@@ -340,11 +340,20 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
 
         // 启用输入后的头 ~2 秒是饱和直流瞬态（RMS≈30000, dc≈25000）：
         // 丢弃，不参与 slot 统计，也不送入唤醒引擎。
+        // 注意：不能返回全 0 数据——WakeNet 在阈值 0.4 下会把数字静音误判为唤醒词。
+        // 这里把剩余瞬态直接读空，然后返回 0（调用方视为"本次无数据"，不会送入引擎）。
         if (rx_warmup_frames_ > 0) {
-            int n = frames < rx_warmup_frames_ ? frames : rx_warmup_frames_;
-            rx_warmup_frames_ -= n;
-            memset(dest, 0, frames * sizeof(int16_t));
-            return frames;
+            rx_warmup_frames_ -= frames;
+            while (rx_warmup_frames_ > 0) {
+                size_t br = 0;
+                if (i2s_channel_read(rx_handle_, bit32_buffer.data(),
+                                     samples * 2 * sizeof(int32_t), &br, kReadTimeoutMs) != ESP_OK) {
+                    break;
+                }
+                rx_warmup_frames_ -= br / (2 * sizeof(int32_t));
+            }
+            if (rx_warmup_frames_ < 0) rx_warmup_frames_ = 0;
+            return 0;
         }
 
         // ---- slot 选择 ----

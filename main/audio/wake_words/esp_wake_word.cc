@@ -64,17 +64,21 @@ bool EspWakeWord::Initialize(AudioCodec* codec, srmodel_list_t* models_list) {
         return false;
     }
 
-    // ---- 唤醒阈值探针 + 手动压到最低 0.4（接口允许范围 0.4~0.9999）----
-    // 单唤醒词模型 word_index 从 1 开始；先打印当前阈值，再压到 0.4，
-    // 最后回读确认。目标是"喊了必醒"，误触发后续再逐步上调。
+    // kWakeThresholdOverride <= 0 表示沿用模型默认阈值。0.4（下限）实测会把全 0 静音误判为唤醒。
+    constexpr float kWakeThresholdOverride = 0.5f;
+    // ---- 唤醒阈值探针 + 可调阈值（接口允许范围 0.4~0.9999）----
+    // 单唤醒词模型 word_index 从 1 开始；先打印当前阈值，再设为 kWakeThresholdOverride，
+    // 最后回读确认。误触发多就调高，唤醒不了就调低（下限 0.4）。
     {
         int word_num = wakenet_iface_->get_word_num(wakenet_data_);
         for (int i = 1; i <= word_num; i++) {
             float th_before = wakenet_iface_->get_det_threshold(wakenet_data_, i);
-            int ok = wakenet_iface_->set_det_threshold(wakenet_data_, 0.4f, i);
+            int ok = (kWakeThresholdOverride > 0)
+                ? wakenet_iface_->set_det_threshold(wakenet_data_, kWakeThresholdOverride, i)
+                : 0;
             float th_after = wakenet_iface_->get_det_threshold(wakenet_data_, i);
-            ESP_LOGI(TAG, "[WakeDebug] word%d threshold %.3f -> set(0.40) ret=%d -> %.3f",
-                     i, th_before, ok, th_after);
+            ESP_LOGI(TAG, "[WakeDebug] word%d threshold %.3f -> set(%.2f) ret=%d -> %.3f",
+                     i, th_before, (double)kWakeThresholdOverride, ok, th_after);
         }
     }
     // ---- 唤醒阈值探针 end ----
