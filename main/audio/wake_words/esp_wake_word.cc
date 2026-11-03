@@ -16,6 +16,34 @@
 // (6 x 240 frames = 60 ms). Keep off unless specifically needed.
 static constexpr bool kWaveDebug = false;
 
+// PcmDump（调试开关）：开机 kPcmDumpStartSec 秒后录 4 秒"实际送入 WakeNet"的音频
+// （2:1 平均降到 8 kHz），由独立任务通过串口以 base64 输出，不阻塞音频输入。
+// 日志出现 "PcmDump: START" 后，用正常音量连续说 3 次"你好小智"（间隔约 1 秒）。
+// 调试完把 kPcmDump 改成 false。
+static constexpr bool kPcmDump = true;
+static constexpr int kPcmDumpStartSec = 45;
+static constexpr int kPcmDumpSamples = 8000 * 4;
+
+static void PcmDumpTask(void* arg) {
+    int16_t* pcm = static_cast<int16_t*>(arg);
+    ESP_LOGW("PcmDump", "DUMP BEGIN rate=8000 samples=%d", kPcmDumpSamples);
+    constexpr int kLineBytes = 192;
+    unsigned char out[4 * kLineBytes / 3 + 8];
+    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(pcm);
+    const int total = kPcmDumpSamples * (int)sizeof(int16_t);
+    for (int off = 0, seq = 0; off < total; off += kLineBytes, seq++) {
+        size_t n = total - off < kLineBytes ? total - off : kLineBytes;
+        size_t olen = 0;
+        mbedtls_base64_encode(out, sizeof(out), &olen, bytes + off, n);
+        out[olen] = 0;
+        printf("PCM %d %s\n", seq, (char*)out);
+        vTaskDelay(pdMS_TO_TICKS(30));
+    }
+    ESP_LOGW("PcmDump", "DUMP END");
+    heap_caps_free(pcm);
+    vTaskDelete(nullptr);
+}
+
 EspWakeWord::EspWakeWord() {
 }
 
@@ -109,6 +137,45 @@ void EspWakeWord::Feed(const std::vector<int16_t>& data) {
     if (wakenet_data_ == nullptr) {
         return;
     }
+
+    // ---- PcmDump (opt-in debug) ----
+    if (kPcmDump) {
+        static int16_t* pcm = nullptr;
+        static int pcm_len = 0;
+        static int pcm_state = 0;  // 0 waiting, 1 recording, 2 done
+        static int acc = 0, acc_n = 0;
+        static bool warned = false;
+        int64_t up_s = esp_timer_get_time() / 1000000;
+        if (pcm_state == 0 && !warned && up_s >= kPcmDumpStartSec - 10) {
+            warned = true;
+            ESP_LOGW("PcmDump", "will START in ~10 s, get ready to speak");
+        }
+        if (pcm_state == 0 && up_s >= kPcmDumpStartSec) {
+            pcm = (int16_t*)heap_caps_malloc(kPcmDumpSamples * sizeof(int16_t), MALLOC_CAP_8BIT);
+            pcm_state = pcm ? 1 : 2;
+            ESP_LOGW("PcmDump", "%s", pcm ? "START - speak the wake word now (3 times, ~1 s apart)" : "malloc failed");
+        }
+        if (pcm_state == 1) {
+            int dch = codec_->input_channels() > 1 ? codec_->input_channels() : 1;
+            for (size_t i = 0; i + dch - 1 < data.size() && pcm_len < kPcmDumpSamples; i += dch) {
+                acc += data[i];
+                if (++acc_n == 2) {
+                    pcm[pcm_len++] = (int16_t)(acc / 2);
+                    acc = 0;
+                    acc_n = 0;
+                }
+            }
+            if (pcm_len >= kPcmDumpSamples) {
+                pcm_state = 2;
+                ESP_LOGW("PcmDump", "recording done, dumping...");
+                if (xTaskCreate(PcmDumpTask, "pcm_dump", 4096, pcm, 1, nullptr) != pdPASS) {
+                    heap_caps_free(pcm);
+                }
+                pcm = nullptr;
+            }
+        }
+    }
+    // ---- PcmDump end ----
 
     // ---- MicDebug 诊断：统计实际送入唤醒引擎的音量 + 信号质量，每秒打印一次 ----
     // RMS=0        : I2S 完全无数据（接线/驱动问题）
