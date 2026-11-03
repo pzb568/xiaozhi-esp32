@@ -286,15 +286,15 @@ int NoAudioCodec::Write(const int16_t* data, int samples) {
 
     size_t bytes_written;
     if (stereo_slots_) {
-        // 立体声帧结构：音频数据放在 stereo_slot_index_ 对应的 slot
-        // （与 RX 自动判定结果一致，保证 MAX98357 在其锁存 slot 收到数据），
-        // 另一 slot 保持 0 静默。
-        int idx = stereo_slot_index_;
+        // 立体声帧结构：同一份数据写入左右两个 slot。
+        // MAX98357 的 SD_MODE 接法不同会输出 L、R 或 (L+R)/2：只写一个 slot 时，
+        // (L+R)/2 模式下音量会减半（-6 dB），两个 slot 都写则任何接法音量都一致。
         std::vector<int32_t> buffer(samples * 2, 0);
         for (int i = 0; i < samples; i++) {
             int64_t temp = int64_t(data[i]) * volume_factor; // 使用 int64_t 进行乘法运算
             int32_t value = (temp > INT32_MAX) ? INT32_MAX : (temp < INT32_MIN) ? INT32_MIN : static_cast<int32_t>(temp);
-            buffer[i * 2 + idx] = value;
+            buffer[i * 2] = value;
+            buffer[i * 2 + 1] = value;
         }
         ESP_ERROR_CHECK(i2s_channel_write(tx_handle_, buffer.data(), samples * 2 * sizeof(int32_t), &bytes_written, portMAX_DELAY));
         return samples;
