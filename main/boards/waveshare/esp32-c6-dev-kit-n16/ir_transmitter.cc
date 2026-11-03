@@ -12,6 +12,7 @@
 #include <esp_log.h>
 #include <esp_check.h>
 #include <string.h>
+#include <vector>
 
 #define TAG "ir_transmitter"
 
@@ -48,43 +49,49 @@ static const uint32_t kNecOneSpace = 1690;
 static const uint32_t kNecZeroSpace = 560;
 
 IrTransmitter::IrTransmitter(gpio_num_t tx_pin) : tx_pin_(tx_pin) {
+    ESP_LOGI(TAG, "=== IR RMT init START on GPIO%d ===", tx_pin_);
     rmt_tx_channel_config_t tx_cfg = {};
     tx_cfg.gpio_num = tx_pin_;
     tx_cfg.clk_src = RMT_CLK_SRC_DEFAULT;
-    tx_cfg.resolution_hz = 1000000;   // 1 tick = 1 us
-    tx_cfg.mem_block_symbols = 48;    // ESP32-C6 每通道 48 symbols
+    tx_cfg.resolution_hz = 1000000;
+    tx_cfg.mem_block_symbols = 48;
+    tx_cfg.trans_queue_depth = 4;
+    tx_cfg.intr_priority = 1;
     esp_err_t err = rmt_new_tx_channel(&tx_cfg, &tx_channel_);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "rmt_new_tx_channel failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "rmt_new_tx_channel FAILED: 0x%x (%s)", err, esp_err_to_name(err));
         return;
     }
+    ESP_LOGI(TAG, "rmt_new_tx_channel OK");
 
-    // 叠加 38kHz 红外载波（高电平期间自动调制）
     rmt_carrier_config_t carrier_cfg = {};
     carrier_cfg.frequency_hz = 38000;
     carrier_cfg.duty_cycle = 0.33;
     carrier_cfg.flags.polarity_active_low = false;
     err = rmt_apply_carrier(tx_channel_, &carrier_cfg);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "rmt_apply_carrier failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "rmt_apply_carrier FAILED: 0x%x (%s)", err, esp_err_to_name(err));
         return;
     }
+    ESP_LOGI(TAG, "rmt_apply_carrier OK");
 
     rmt_copy_encoder_config_t enc_cfg = {};
     err = rmt_new_copy_encoder(&enc_cfg, &copy_encoder_);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "rmt_new_copy_encoder failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "rmt_new_copy_encoder FAILED: 0x%x (%s)", err, esp_err_to_name(err));
         return;
     }
+    ESP_LOGI(TAG, "rmt_new_copy_encoder OK");
 
     err = rmt_enable(tx_channel_);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "rmt_enable failed: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "rmt_enable FAILED: 0x%x (%s)", err, esp_err_to_name(err));
         return;
     }
+    ESP_LOGI(TAG, "rmt_enable OK");
 
     ready_ = true;
-    ESP_LOGI(TAG, "IR transmitter ready on GPIO%d (38kHz carrier)", tx_pin_);
+    ESP_LOGI(TAG, "=== IR transmitter READY on GPIO%d (38kHz carrier) ===", tx_pin_);
 }
 
 IrTransmitter::~IrTransmitter() {
@@ -122,36 +129,25 @@ bool IrTransmitter::SendPulseTrain(const uint32_t* pairs, size_t pair_count) {
         return false;
     }
 
-    // ESP32-C6 单通道 RMT 内存 48 symbols，超过需分段。
-    // 在长 space（>=4000us，协议固有的段/帧间隙）处切分，额外延迟被长静默掩盖，
-    // 接收端无感知。每段保守上限 44 个 symbols。
-    rmt_symbol_word_t symbols[44];
-    size_t nsym = 0;
+    // 整帧一次 rmt_transmit：copy encoder 会通过乒乓中断续写超过内存块的数据，
+    // 帧内无间断。手动分段会在位间隔处插入任务切换延迟，导致错码。
+    std::vector<rmt_symbol_word_t> symbols(pair_count);
     for (size_t i = 0; i < pair_count; i++) {
         uint32_t on = pairs[2 * i];
         uint32_t off = pairs[2 * i + 1];
-        if (on > 65535) {
+        if (on > 32767) {   // RMT 时长字段仅 15 位
             ESP_LOGE(TAG, "mark too long: %u", (unsigned)on);
             return false;
         }
-        if (off > 65535) {
+        if (off > 32767) {
             off = 0;  // 超长静默（如海尔帧尾 150ms）无需实际发送
         }
-        symbols[nsym].level0 = 1;
-        symbols[nsym].duration0 = (uint16_t)on;
-        symbols[nsym].level1 = 0;
-        symbols[nsym].duration1 = (uint16_t)off;
-        nsym++;
-        bool last = (i == pair_count - 1);
-        bool at_boundary = (off >= 4000);   // 长 space = 天然分界
-        if (nsym >= 44 || last || at_boundary) {
-            if (!TransmitChunk(tx_channel_, copy_encoder_, symbols, nsym)) {
-                return false;
-            }
-            nsym = 0;
-        }
+        symbols[i].level0 = 1;
+        symbols[i].duration0 = (uint16_t)on;
+        symbols[i].level1 = 0;
+        symbols[i].duration1 = (uint16_t)off;
     }
-    return true;
+    return TransmitChunk(tx_channel_, copy_encoder_, symbols.data(), pair_count);
 }
 
 // ---- 脉冲序列构造辅助（操作成员 pulse_buf_）----
@@ -222,7 +218,7 @@ bool IrTransmitter::SendGree(bool power_on, AcMode mode, int temp, int fan) {
     uint8_t sum = 10;
     for (int i = 0; i < 4; i++) sum += s[i] & 0x0F;
     for (int i = 4; i < 7; i++) sum += s[i] >> 4;
-    s[7] = sum & 0x0F;
+    s[7] = (sum & 0x0F) << 4;
 
     PulseBuilder pb(pulse_buf_);
     pb.P(kGreeHdrMark, kGreeHdrSpace);
@@ -258,6 +254,7 @@ bool IrTransmitter::SendMidea(bool power_on, AcMode mode, int temp, int fan) {
     uint8_t s[6] = {0};
     s[1] = 0xFF;   // SensorTemp 未使用
     s[2] = 0xFF;   // OffTimer 未使用
+    if (temp < 17) temp = 17;   // 美的最低 17°C
     s[3] = (temp - 17) & 0x1F;   // 温度 17-30°C
     // B4: Mode(3) | Fan(2) | unknown(1) | Sleep(1) | Power(1)
     s[4] = (midea_mode & 0x07) | ((fan & 0x03) << 3) | ((power_on ? 1 : 0) << 7);

@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <cstring>
 #include <iterator>
+#include <optional>
 
 #include "application.h"
 #include "board.h"
@@ -201,6 +202,13 @@ void McpServer::AddUserOnlyTools() {
                     return std::unexpected("Failed to open URL: " + url + " (" +
                                            opened.error().ToString() + ")");
                 }
+                auto write_or_fail = [&http](const char* data,
+                                             size_t size) -> std::optional<std::string> {
+                    if (auto written = http->Write(data, size); !written) {
+                        return written.error().ToString();
+                    }
+                    return std::nullopt;
+                };
                 {
                     // 文件字段头部
                     std::string file_header;
@@ -210,19 +218,35 @@ void McpServer::AddUserOnlyTools() {
                         "filename=\"screenshot.jpg\"\r\n";
                     file_header += "Content-Type: image/jpeg\r\n";
                     file_header += "\r\n";
-                    http->Write(file_header.c_str(), file_header.size());
+                    if (auto error = write_or_fail(file_header.c_str(), file_header.size());
+                        error) {
+                        http->Close();
+                        return std::unexpected("Failed to upload screenshot: " + *error);
+                    }
                 }
 
                 // JPEG数据
-                http->Write((const char*)jpeg_data.data(), jpeg_data.size());
+                if (auto error = write_or_fail((const char*)jpeg_data.data(), jpeg_data.size());
+                    error) {
+                    http->Close();
+                    return std::unexpected("Failed to upload screenshot: " + *error);
+                }
 
                 {
                     // multipart尾部
                     std::string multipart_footer;
                     multipart_footer += "\r\n--" + boundary + "--\r\n";
-                    http->Write(multipart_footer.c_str(), multipart_footer.size());
+                    if (auto error =
+                            write_or_fail(multipart_footer.c_str(), multipart_footer.size());
+                        error) {
+                        http->Close();
+                        return std::unexpected("Failed to upload screenshot: " + *error);
+                    }
                 }
-                http->Write("", 0);
+                if (auto error = write_or_fail("", 0); error) {
+                    http->Close();
+                    return std::unexpected("Failed to upload screenshot: " + *error);
+                }
 
                 auto upload_status = http->GetStatusCode();
                 if (!upload_status) {
@@ -300,6 +324,17 @@ void McpServer::AddUserOnlyTools() {
                         settings.SetString("download_url", url);
                         return true;
                     });
+}
+
+void McpServer::LogToolInventory() const {
+    size_t user_only = 0;
+    for (const auto& tool : tools_) {
+        if (tool->user_only()) {
+            ++user_only;
+        }
+    }
+    ESP_LOGI(TAG, "%u tools registered: %u visible to the model, %u user-only",
+             (unsigned)tools_.size(), (unsigned)(tools_.size() - user_only), (unsigned)user_only);
 }
 
 void McpServer::AddTool(std::unique_ptr<McpTool> tool) {
@@ -463,13 +498,24 @@ void McpServer::ReplyResult(int id, const std::string& result,
 
 void McpServer::ReplyError(int id, int code, const std::string& message,
                            const ResponseSender& response_sender) {
+    CJsonUniquePtr json_message(cJSON_CreateString(message.c_str()));
+    if (json_message == nullptr) {
+        ESP_LOGE(TAG, "Failed to allocate MCP error message");
+        return;
+    }
+    CJsonStringUniquePtr encoded_message(cJSON_PrintUnformatted(json_message.get()));
+    if (encoded_message == nullptr) {
+        ESP_LOGE(TAG, "Failed to serialize MCP error message");
+        return;
+    }
+
     std::string payload = "{\"jsonrpc\":\"2.0\",\"id\":";
     payload += std::to_string(id);
     payload += ",\"error\":{\"code\":";
     payload += std::to_string(code);
-    payload += ",\"message\":\"";
-    payload += message;
-    payload += "\"}}";
+    payload += ",\"message\":";
+    payload += encoded_message.get();
+    payload += "}}";
     SendResponse(payload, response_sender);
 }
 

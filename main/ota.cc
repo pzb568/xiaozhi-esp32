@@ -17,24 +17,34 @@
 #include <esp_hmac.h>
 #endif
 
-#include <cstring>
-#include <vector>
-#include <sstream>
 #include <algorithm>
+#include <charconv>
+#include <cstring>
+#include <expected>
+#include <system_error>
+#include <vector>
 
 #define TAG "Ota"
 
-
 Ota::Ota() {
 #ifdef ESP_EFUSE_BLOCK_USR_DATA
-    // Read Serial Number from efuse user_data
-    uint8_t serial_number[33] = {0};
+    // USER_DATA may contain board metadata instead of a textual serial number.
+    uint8_t serial_number[32] = {0};
     if (esp_efuse_read_field_blob(ESP_EFUSE_USER_DATA, serial_number, 32 * 8) == ESP_OK) {
-        if (serial_number[0] == 0) {
-            has_serial_number_ = false;
-        } else {
-            serial_number_ = std::string(reinterpret_cast<char*>(serial_number), 32);
+        const auto data_end = serial_number + sizeof(serial_number);
+        const auto text_end = std::find(serial_number, data_end, uint8_t{0});
+        const bool printable = std::all_of(
+            serial_number, text_end, [](uint8_t byte) { return byte >= 0x20 && byte <= 0x7E; });
+        const bool non_blank =
+            std::any_of(serial_number, text_end, [](uint8_t byte) { return byte != ' '; });
+        const bool zero_padding =
+            std::all_of(text_end, data_end, [](uint8_t byte) { return byte == 0; });
+        if (printable && non_blank && zero_padding) {
+            serial_number_.assign(reinterpret_cast<const char*>(serial_number),
+                                  text_end - serial_number);
             has_serial_number_ = true;
+        } else if (std::any_of(serial_number, data_end, [](uint8_t byte) { return byte != 0; })) {
+            ESP_LOGW(TAG, "Ignoring non-textual or blank eFuse serial number; using activation v1");
         }
     }
 #endif
@@ -400,31 +410,58 @@ bool Ota::StartUpgrade(std::function<void(int progress, size_t speed)> callback)
 }
 
 
-std::vector<int> Ota::ParseVersion(const std::string& version) {
-    std::vector<int> versionNumbers;
-    std::stringstream ss(version);
-    std::string segment;
-    
-    while (std::getline(ss, segment, '.')) {
-        versionNumbers.push_back(std::stoi(segment));
+// Versions are compared as dot-separated decimal numbers. Parsing must never throw: exceptions are
+// disabled in this project, so a malformed string from the server would otherwise terminate the
+// firmware instead of being reported as an error.
+std::expected<std::vector<int>, std::string> Ota::ParseVersion(const std::string& version) {
+    std::vector<int> version_numbers;
+    size_t start = 0;
+
+    while (true) {
+        size_t end = version.find('.', start);
+        std::string segment =
+            version.substr(start, end == std::string::npos ? std::string::npos : end - start);
+
+        int value = 0;
+        auto [ptr, ec] = std::from_chars(segment.data(), segment.data() + segment.size(), value);
+        if (segment.empty() || ec != std::errc() || ptr != segment.data() + segment.size()) {
+            return std::unexpected("invalid version segment \"" + segment + "\"");
+        }
+        version_numbers.push_back(value);
+
+        if (end == std::string::npos) {
+            return version_numbers;
+        }
+        start = end + 1;
     }
-    
-    return versionNumbers;
 }
 
 bool Ota::IsNewVersionAvailable(const std::string& currentVersion, const std::string& newVersion) {
-    std::vector<int> current = ParseVersion(currentVersion);
-    std::vector<int> newer = ParseVersion(newVersion);
-    
-    for (size_t i = 0; i < std::min(current.size(), newer.size()); ++i) {
-        if (newer[i] > current[i]) {
+    auto current = ParseVersion(currentVersion);
+    if (!current) {
+        ESP_LOGW(TAG, "Cannot parse current version \"%s\": %s", currentVersion.c_str(),
+                 current.error().c_str());
+        return false;
+    }
+
+    auto newer = ParseVersion(newVersion);
+    if (!newer) {
+        // Never report an update we cannot compare, otherwise a malformed version string would
+        // trigger a firmware downgrade or an endless upgrade loop.
+        ESP_LOGW(TAG, "Ignoring firmware version \"%s\": %s", newVersion.c_str(),
+                 newer.error().c_str());
+        return false;
+    }
+
+    for (size_t i = 0; i < std::min(current->size(), newer->size()); ++i) {
+        if ((*newer)[i] > (*current)[i]) {
             return true;
-        } else if (newer[i] < current[i]) {
+        } else if ((*newer)[i] < (*current)[i]) {
             return false;
         }
     }
-    
-    return newer.size() > current.size();
+
+    return newer->size() > current->size();
 }
 
 std::string Ota::GetActivationPayload() {
