@@ -111,7 +111,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
             .slot_mask = I2S_STD_SLOT_BOTH,
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
             .ws_pol = false,
-            .bit_shift = true,
+            .bit_shift = false,
 #if SOC_I2S_HW_VERSION_2
             .left_align = true,
             .big_endian = false,
