@@ -79,7 +79,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
     // 若用 mono 帧结构（每帧 32 SCK），SCK 减半 → 过采样率仅 32 →
     // 内部抽取滤波器失配，大量高频量化噪声泄漏（实测 zcr 0.34、dc 漂移），
     // 16kHz 时（过采样率 16）甚至完全失效输出静音。
-    stereo_slots_ = false;
+    stereo_slots_ = true;
 #endif
 
     i2s_chan_config_t chan_cfg = {

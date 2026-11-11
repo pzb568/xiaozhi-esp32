@@ -25,7 +25,7 @@
 
 // 麦克风输入增益（线性倍数）。原始数据已 >>12（相当于 +24dB），再乘该值。
 // 说话削波/识别差时试 2 或 4；声音太小时再加大。
-#define AUDIO_INPUT_GAIN 8.0f
+#define AUDIO_INPUT_GAIN 2.0f
 
 // 选择接线模式：Duplex（共用 BCLK/WS，接线最简）
 // ESP32-C6 只有 1 个 I2S 控制器，Simplex 不可用（会崩溃），必须 Duplex。
