@@ -376,7 +376,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
             static int32_t s_prev[2] = {0, 0};
             for (int i = 0; i < frames; i++) {
                 for (int k = 0; k < 2; k++) {
-                    int32_t s = bit32_buffer[i * 2 + k] >> 12;
+                    int32_t s = bit32_buffer[i * 2 + k] >> 16;
                     s_sum2[k] += (int64_t)s * s;
                     s_sum[k] += s;
                     if (s > s_pkp[k]) s_pkp[k] = s;
@@ -431,7 +431,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
 
         int idx = stereo_slot_index_;
         for (int i = 0; i < frames; i++) {
-            int32_t value = bit32_buffer[i * 2 + idx] >> 12;
+            int32_t value = bit32_buffer[i * 2 + idx] >> 16;
             dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
         }
         // Soft-knee gain (integer math).
