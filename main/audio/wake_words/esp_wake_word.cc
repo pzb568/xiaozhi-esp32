@@ -20,7 +20,7 @@ static constexpr bool kWaveDebug = false;
 // （2:1 平均降到 8 kHz），由独立任务通过串口以 base64 输出，不阻塞音频输入。
 // 日志出现 "PcmDump: START" 后，用正常音量连续说 3 次"你好小智"（间隔约 1 秒）。
 // 调试完把 kPcmDump 改成 false。
-static constexpr bool kPcmDump = true;
+static constexpr bool kPcmDump = false;
 static constexpr int kPcmDumpStartSec = 45;
 static constexpr int kPcmDumpSamples = 8000 * 4;
 
