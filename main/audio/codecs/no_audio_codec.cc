@@ -110,7 +110,7 @@ NoAudioCodecDuplex::NoAudioCodecDuplex(int input_sample_rate, int output_sample_
             .slot_mode = I2S_SLOT_MODE_STEREO,
             .slot_mask = I2S_STD_SLOT_BOTH,
             .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
-            .ws_pol = false,
+            .ws_pol = true,
             .bit_shift = true,
 #if SOC_I2S_HW_VERSION_2
             .left_align = true,
@@ -376,7 +376,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
             static int32_t s_prev[2] = {0, 0};
             for (int i = 0; i < frames; i++) {
                 for (int k = 0; k < 2; k++) {
-                    int32_t s = bit32_buffer[i * 2 + k] >> 10;
+                    int32_t s = bit32_buffer[i * 2 + k] >> 11;
                     s_sum2[k] += (int64_t)s * s;
                     s_sum[k] += s;
                     if (s > s_pkp[k]) s_pkp[k] = s;
@@ -431,7 +431,7 @@ int NoAudioCodec::Read(int16_t* dest, int samples) {
 
         int idx = stereo_slot_index_;
         for (int i = 0; i < frames; i++) {
-            int32_t value = bit32_buffer[i * 2 + idx] >> 10;
+            int32_t value = bit32_buffer[i * 2 + idx] >> 11;
             dest[i] = (value > INT16_MAX) ? INT16_MAX : (value < -INT16_MAX) ? -INT16_MAX : (int16_t)value;
         }
         // Soft-knee gain (integer math).
